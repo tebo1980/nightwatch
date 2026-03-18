@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Nightwatch Widget Test</title>
+  <style>
+    body { font-family: sans-serif; padding: 40px; background: #f5f5f5; }
+    h1 { color: #333; }
+    p { color: #666; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <h1>Advanced Plumbing Solutions</h1>
+  <p>Professional plumbing services in New Albany and Louisville.</p>
+  <p>Licensed and insured. Available 24/7 for emergencies.</p>
+  <script>
+    window.NightwatchConfig = {
+      clientId: "cmmvrrncc0000vh5x78zqcv35",
+      agentName: "Aria",
+      businessName: "Advanced Plumbing Solutions",
+      widgetColor: "#C17B2A",
+      apiUrl: "http://localhost:3001/api/chat",
+      greeting: "Hi! I'm Aria from Advanced Plumbing Solutions. Are you dealing with a plumbing issue I can help with?"
+    }
+  </script>
+  <script src="/nightwatch-widget.js"></script>
+</body>
+</html>

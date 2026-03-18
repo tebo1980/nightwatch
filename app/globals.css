@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-outfit);
+  --color-nw-bg: #0E0C0A;
+  --color-nw-card: #1E1B16;
+  --color-nw-border: rgba(193, 123, 42, 0.15);
+  --color-nw-amber: #C17B2A;
+  --color-nw-text: #F2EDE4;
+  --color-nw-muted: #8A8070;
+}
+
+body {
+  background: #0E0C0A;
+  color: #F2EDE4;
+  font-family: var(--font-outfit), sans-serif;
+}
+
+input, textarea, select {
+  font-family: var(--font-outfit), sans-serif;
+}
