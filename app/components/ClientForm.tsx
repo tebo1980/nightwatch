@@ -185,10 +185,16 @@ window.NightwatchConfig = {
         body: JSON.stringify(payload),
       })
       if (res.ok) {
+        router.refresh()
         router.push('/')
+      } else {
+        const data = await res.json().catch(() => ({}))
+        console.error('Save failed:', res.status, data)
+        alert(`Save failed: ${data.error || res.statusText}`)
       }
     } catch (err) {
       console.error('Save error:', err)
+      alert('Network error — could not reach the server.')
     } finally {
       setSaving(false)
     }
