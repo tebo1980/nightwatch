@@ -74,12 +74,12 @@ export default function Dashboard() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           <div className="bg-[#1E1B16] rounded-xl border border-[rgba(193,123,42,0.15)] p-4">
             <div className="text-2xl font-semibold text-[#C17B2A]">{clients.length}</div>
             <div className="text-xs text-[#8A8070] mt-1">Active Clients</div>
           </div>
-          {(['Rex', 'Iris', 'Max', 'Della'] as const).map((name) => {
+          {(['Rex', 'Iris', 'Max', 'Della', 'Sage', 'Flynn', 'Cole', 'River'] as const).map((name) => {
             const key = (name.toLowerCase() + 'Enabled') as keyof AgentClientCard
             const count = clients.filter((c) => c[key]).length
             return (
@@ -98,6 +98,10 @@ export default function Dashboard() {
             { name: 'Iris', href: '/iris' },
             { name: 'Max', href: '/max' },
             { name: 'Della', href: '/della' },
+            { name: 'Sage', href: '/sage' },
+            { name: 'Flynn', href: '/flynn' },
+            { name: 'Cole', href: '/cole' },
+            { name: 'River', href: '/river' },
           ].map((link) => (
             <Link
               key={link.name}

@@ -281,45 +281,122 @@ model DellaDraft {
   updatedAt       DateTime    @updatedAt
 }
 
+// ─── Flynn: Fleet & Vehicle Tracking ──────────────────────────────
+
 model FlynnVehicle {
-  id            String      @id @default(cuid())
-  agentClientId String
-  agentClient   AgentClient @relation(fields: [agentClientId], references: [id])
-  name          String
-  mileage       Int?
-  nextService   DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id              String      @id @default(cuid())
+  clientId        String
+  client          AgentClient @relation(fields: [clientId], references: [id])
+  vehicleName     String
+  make            String
+  model           String
+  year            Int
+  licensePlate    String?
+  currentMileage  Int
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  fuelLogs        FuelLog[]
+  maintenanceLogs MaintenanceLog[]
 }
+
+model FuelLog {
+  id            String        @id @default(cuid())
+  vehicleId     String
+  vehicle       FlynnVehicle  @relation(fields: [vehicleId], references: [id])
+  date          DateTime
+  gallons       Float
+  costPerGallon Float
+  totalCost     Float
+  mileageAtFill Int
+  createdAt     DateTime      @default(now())
+}
+
+model MaintenanceLog {
+  id               String        @id @default(cuid())
+  vehicleId        String
+  vehicle          FlynnVehicle  @relation(fields: [vehicleId], references: [id])
+  date             DateTime
+  type             String
+  cost             Float
+  mileageAtService Int
+  notes            String?
+  nextDueMileage   Int?
+  createdAt        DateTime      @default(now())
+}
+
+// ─── Cole: Cost of Goods & Inventory ──────────────────────────────
 
 model ColeInventoryItem {
   id            String      @id @default(cuid())
-  agentClientId String
-  agentClient   AgentClient @relation(fields: [agentClientId], references: [id])
-  itemName      String
-  quantity      Int         @default(0)
-  unitCost      Float?
-  reorderAt     Int?
+  clientId      String
+  client        AgentClient @relation(fields: [clientId], references: [id])
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 }
 
-model RiverAppointment {
-  id            String      @id @default(cuid())
-  agentClientId String
-  agentClient   AgentClient @relation(fields: [agentClientId], references: [id])
-  customerName  String
-  appointmentType String?
-  scheduledAt   DateTime
-  status        String      @default("scheduled")
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+model ExpenseEntry {
+  id           String   @id @default(cuid())
+  clientId     String
+  date         DateTime
+  vendor       String
+  category     String
+  description  String
+  amount       Float
+  jobReference String?
+  receiptUrl   String?
+  createdAt    DateTime @default(now())
 }
+
+model JobRevenue {
+  id        String   @id @default(cuid())
+  clientId  String
+  date      DateTime
+  jobName   String
+  jobType   String
+  revenue   Float
+  notes     String?
+  createdAt DateTime @default(now())
+}
+
+// ─── River: Appointments & Reminders ──────────────────────────────
+
+model RiverAppointment {
+  id                    String                @id @default(cuid())
+  clientId              String
+  client                AgentClient           @relation(fields: [clientId], references: [id])
+  customerName          String
+  customerPhone         String
+  customerEmail         String?
+  serviceType           String
+  scheduledAt           DateTime
+  durationMinutes       Int                   @default(60)
+  providerName          String?
+  notes                 String?
+  status                String                @default("scheduled")
+  recoveryMessageSentAt DateTime?
+  reminders             AppointmentReminder[]
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+}
+
+model AppointmentReminder {
+  id            String           @id @default(cuid())
+  appointmentId String
+  appointment   RiverAppointment @relation(fields: [appointmentId], references: [id])
+  type          String
+  scheduledFor  DateTime
+  sentAt        DateTime?
+  status        String           @default("pending")
+  message       String
+  createdAt     DateTime         @default(now())
+}
+
+// ─── Sage: Social Media Posts ─────────────────────────────────────
 
 model SagePost {
   id            String      @id @default(cuid())
-  agentClientId String
-  agentClient   AgentClient @relation(fields: [agentClientId], references: [id])
+  clientId      String
+  client        AgentClient @relation(fields: [clientId], references: [id])
   platform      String
   content       String
   scheduledFor  DateTime?
