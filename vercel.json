@@ -3,5 +3,19 @@
     "app/api/**": {
       "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/rex/scrape",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/iris/process",
+      "schedule": "0 */4 * * *"
+    },
+    {
+      "path": "/api/max/process",
+      "schedule": "0 */12 * * *"
+    }
+  ]
 }

@@ -303,6 +303,37 @@ export async function POST(request: Request) {
         // Send email and SMS notifications
         sendLeadEmailNotification(savedLead, client).catch(e => console.error("Email notify error:", e))
         sendLeadSmsNotification(savedLead, client).catch(e => console.error("SMS notify error:", e))
+
+        // Auto-create Iris follow-up lead if matching AgentClient has Iris enabled
+        try {
+          const irisClient = await prisma.agentClient.findFirst({
+            where: {
+              ownerEmail: client.email,
+              irisEnabled: true,
+              active: true,
+            },
+          })
+          if (irisClient) {
+            const nextFollowUp = new Date()
+            nextFollowUp.setDate(nextFollowUp.getDate() + irisClient.irisFollowUpDay1)
+            await prisma.irisLead.create({
+              data: {
+                clientId: irisClient.id,
+                novaLeadId: savedLead.id,
+                leadName: `${leadData.firstName}${leadData.lastName ? ' ' + leadData.lastName : ''}`,
+                leadEmail: leadData.email || null,
+                leadPhone: leadData.phone || null,
+                source: 'nova',
+                serviceNeeded: leadData.jobType || null,
+                initialMessage: leadData.conversationSummary || null,
+                status: 'new',
+                nextFollowUpAt: nextFollowUp,
+              },
+            })
+          }
+        } catch (irisErr) {
+          console.error('Iris auto-create error:', irisErr)
+        }
       } catch (parseError) {
         console.error('Lead parse error:', parseError)
       }

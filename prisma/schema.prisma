@@ -67,3 +67,264 @@ model Lead {
   sentToGHL           Boolean      @default(false)
   createdAt           DateTime     @default(now())
 }
+
+// ─── BaraTrust AI Staff: Shared Client Table ───────────────────────────
+
+model AgentClient {
+  id                    String   @id @default(cuid())
+
+  // Business Identity
+  businessName          String
+  industry              String
+  ownerName             String
+  ownerFirstName        String
+  ownerEmail            String
+  contactPhone          String?
+  website               String?
+  city                  String
+  state                 String
+  zipCode               String?
+  businessAddress       String?
+
+  // Brand Voice
+  tonePreference        String   @default("friendly")
+  tagline               String?
+  servicesOffered       String
+  typicalJobTypes       String?
+  avgTicketSize         String?
+  idealCustomer         String?
+
+  // Agent Toggles
+  novaEnabled           Boolean  @default(false)
+  rexEnabled            Boolean  @default(false)
+  irisEnabled           Boolean  @default(false)
+  maxEnabled            Boolean  @default(false)
+  dellaEnabled          Boolean  @default(false)
+  flynnEnabled          Boolean  @default(false)
+  coleEnabled           Boolean  @default(false)
+  riverEnabled          Boolean  @default(false)
+  sageEnabled           Boolean  @default(false)
+  atlasEnabled          Boolean  @default(false)
+
+  // Rex-specific config
+  googleReviewLink      String?
+  googlePlaceId         String?
+  yelpBusinessId        String?
+  rexLastScrapeAt       DateTime?
+
+  // Iris-specific config
+  irisFollowUpDay1      Int      @default(1)
+  irisFollowUpDay2      Int      @default(3)
+  irisFollowUpDay3      Int      @default(7)
+
+  // Max-specific config
+  maxReviewDelayDays    Int      @default(2)
+  maxPaymentReminderDays String  @default("7,14,30")
+
+  // River-specific config
+  riverBusinessHours    String?
+  riverAppointmentTypes String?
+
+  // Subscription info
+  tier                  String   @default("complete")
+  active                Boolean  @default(true)
+  startedAt             DateTime @default(now())
+  notes                 String?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // Relations
+  reviews               Review[]
+  weeklyRepReports      WeeklyRepReport[]
+  irisLeads             IrisLead[]
+  maxJobs               MaxJob[]
+  maxInvoices           MaxInvoice[]
+  dellaDrafts           DellaDraft[]
+  flynnVehicles         FlynnVehicle[]
+  coleInventoryItems    ColeInventoryItem[]
+  riverAppointments     RiverAppointment[]
+  sagePosts             SagePost[]
+}
+
+// ─── Stub models for agent relations (will be expanded per agent) ──────
+
+model Review {
+  id              String      @id @default(cuid())
+  clientId        String
+  client          AgentClient @relation(fields: [clientId], references: [id])
+  platform        String      // "google" | "yelp" | "facebook" | "manual"
+  externalId      String?     // platform's own review ID (for dedup)
+  reviewerName    String
+  rating          Int         // 1-5
+  reviewText      String
+  reviewDate      DateTime
+  draftResponse   String?
+  finalResponse   String?
+  status          String      @default("pending") // pending | drafted | approved | posted
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([clientId, platform, externalId])
+}
+
+model WeeklyRepReport {
+  id              String      @id @default(cuid())
+  clientId        String
+  client          AgentClient @relation(fields: [clientId], references: [id])
+  weekStart       DateTime
+  weekEnd         DateTime
+  totalReviews    Int
+  avgRating       Float
+  fiveStarCount   Int
+  oneStarCount    Int
+  summaryText     String
+  sentAt          DateTime?
+  createdAt       DateTime    @default(now())
+}
+
+model IrisLead {
+  id                String       @id @default(cuid())
+  clientId          String
+  client            AgentClient  @relation(fields: [clientId], references: [id])
+  novaLeadId        String?      // Links back to Nova's Lead.id if it came through Nova
+  leadName          String
+  leadEmail         String?
+  leadPhone         String?
+  source            String       @default("nova")
+  serviceNeeded     String?
+  initialMessage    String?
+  status            String       @default("new") // new | following-up | converted | exhausted | dead
+  followUpCount     Int          @default(0)
+  lastFollowUpAt    DateTime?
+  nextFollowUpAt    DateTime?
+  convertedAt       DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  followUps         IrisFollowUp[]
+}
+
+model IrisFollowUp {
+  id            String    @id @default(cuid())
+  leadId        String
+  lead          IrisLead  @relation(fields: [leadId], references: [id])
+  followUpNum   Int
+  channel       String    // "email" | "sms-note"
+  subject       String?
+  message       String
+  sentAt        DateTime?
+  status        String    @default("pending") // pending | sent | failed
+  createdAt     DateTime  @default(now())
+}
+
+model MaxJob {
+  id                String      @id @default(cuid())
+  clientId          String
+  client            AgentClient @relation(fields: [clientId], references: [id])
+  customerName      String
+  customerEmail     String?
+  customerPhone     String?
+  serviceProvided   String
+  jobValue          Float?
+  completedAt       DateTime
+  notes             String?
+  reviewRequested   Boolean     @default(false)
+  reviewRequestedAt DateTime?
+  reviewReceived    Boolean     @default(false)
+  createdAt         DateTime    @default(now())
+}
+
+model MaxInvoice {
+  id              String       @id @default(cuid())
+  clientId        String
+  client          AgentClient  @relation(fields: [clientId], references: [id])
+  customerName    String
+  customerEmail   String?
+  customerPhone   String?
+  invoiceNumber   String?
+  amount          Float
+  description     String?
+  dueDate         DateTime
+  paidAt          DateTime?
+  status          String       @default("unpaid") // unpaid | paid | written-off
+  remindersCount  Int          @default(0)
+  lastReminderAt  DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  reminders       MaxReminder[]
+}
+
+model MaxReminder {
+  id            String     @id @default(cuid())
+  invoiceId     String
+  invoice       MaxInvoice @relation(fields: [invoiceId], references: [id])
+  reminderNum   Int
+  message       String
+  sentAt        DateTime?
+  status        String     @default("pending")
+  createdAt     DateTime   @default(now())
+}
+
+model DellaDraft {
+  id              String      @id @default(cuid())
+  clientId        String
+  client          AgentClient @relation(fields: [clientId], references: [id])
+  emailType       String
+  recipientName   String
+  recipientEmail  String?
+  subject         String
+  body            String
+  requestNotes    String?
+  status          String      @default("draft") // draft | sent | discarded
+  sentAt          DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model FlynnVehicle {
+  id            String      @id @default(cuid())
+  agentClientId String
+  agentClient   AgentClient @relation(fields: [agentClientId], references: [id])
+  name          String
+  mileage       Int?
+  nextService   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model ColeInventoryItem {
+  id            String      @id @default(cuid())
+  agentClientId String
+  agentClient   AgentClient @relation(fields: [agentClientId], references: [id])
+  itemName      String
+  quantity      Int         @default(0)
+  unitCost      Float?
+  reorderAt     Int?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model RiverAppointment {
+  id            String      @id @default(cuid())
+  agentClientId String
+  agentClient   AgentClient @relation(fields: [agentClientId], references: [id])
+  customerName  String
+  appointmentType String?
+  scheduledAt   DateTime
+  status        String      @default("scheduled")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model SagePost {
+  id            String      @id @default(cuid())
+  agentClientId String
+  agentClient   AgentClient @relation(fields: [agentClientId], references: [id])
+  platform      String
+  content       String
+  scheduledFor  DateTime?
+  postedAt      DateTime?
+  status        String      @default("draft")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
