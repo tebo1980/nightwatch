@@ -7,15 +7,15 @@
   "crons": [
     {
       "path": "/api/rex/scrape",
-      "schedule": "0 */6 * * *"
+      "schedule": "0 8 * * *"
     },
     {
       "path": "/api/iris/process",
-      "schedule": "0 */4 * * *"
+      "schedule": "0 9 * * *"
     },
     {
       "path": "/api/max/process",
-      "schedule": "0 */12 * * *"
+      "schedule": "0 10 * * *"
     }
   ]
 }
