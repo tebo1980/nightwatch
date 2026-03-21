@@ -1,67 +1,91 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { scrapeTarget as runScrape, parsePrice } from '@/lib/scraper-engine'
 
-async function scrapeTarget(target: { id: string; url: string; priceSelector: string; targetTable: string; targetField: string; targetRecordId: string }) {
+interface RunResult {
+  id: string
+  name: string
+  status: 'success' | 'failed'
+  result?: string
+  price?: number | null
+  error?: string
+}
+
+async function processTarget(target: {
+  id: string; name: string; url: string; priceSelector: string
+  targetTable: string; targetField: string; targetRecordId: string
+  lastResult: string | null
+}): Promise<RunResult> {
   try {
-    // Fetch the page HTML
-    const res = await fetch(target.url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const html = await res.text()
+    const scrapeResult = await runScrape(target.url, target.priceSelector)
 
-    // Extract using a simple regex-based approach for CSS selectors
-    // Supports: .class, #id, [attr], tag selectors
-    let result: string | null = null
-    const selector = target.priceSelector.trim()
-
-    if (selector.startsWith('.')) {
-      // Class selector
-      const className = selector.slice(1).replace(/\./g, '\\s+')
-      const regex = new RegExp(`class="[^"]*${className}[^"]*"[^>]*>([^<]+)`, 'i')
-      const match = html.match(regex)
-      if (match) result = match[1].trim()
-    } else if (selector.startsWith('#')) {
-      // ID selector
-      const id = selector.slice(1)
-      const regex = new RegExp(`id="${id}"[^>]*>([^<]+)`, 'i')
-      const match = html.match(regex)
-      if (match) result = match[1].trim()
-    } else if (selector.startsWith('[')) {
-      // Attribute selector e.g. [data-price]
-      const attr = selector.slice(1, -1)
-      const regex = new RegExp(`${attr}="([^"]+)"`, 'i')
-      const match = html.match(regex)
-      if (match) result = match[1].trim()
-    } else {
-      // Tag selector or complex — try to match tag content
-      const regex = new RegExp(`<${selector}[^>]*>([^<]+)</${selector}>`, 'i')
-      const match = html.match(regex)
-      if (match) result = match[1].trim()
+    if (!scrapeResult.success) {
+      await prisma.scraperLog.create({
+        data: { targetId: target.id, status: 'failed', errorMsg: scrapeResult.error },
+      })
+      await prisma.scraperTarget.update({
+        where: { id: target.id },
+        data: { lastScraped: new Date(), lastStatus: 'failed' },
+      })
+      return { id: target.id, name: target.name, status: 'failed', error: scrapeResult.error }
     }
 
-    if (!result) throw new Error('Selector matched no content')
+    const rawResult = scrapeResult.result || ''
+    const price = parsePrice(rawResult)
+
+    // Update the scraper target record
+    await prisma.scraperTarget.update({
+      where: { id: target.id },
+      data: { lastScraped: new Date(), lastResult: rawResult, lastStatus: 'success' },
+    })
 
     // Log success
     await prisma.scraperLog.create({
-      data: { targetId: target.id, result, status: 'success' },
-    })
-    await prisma.scraperTarget.update({
-      where: { id: target.id },
-      data: { lastScraped: new Date(), lastResult: result, lastStatus: 'success' },
+      data: { targetId: target.id, result: rawResult, status: 'success' },
     })
 
-    return { id: target.id, status: 'success', result }
+    // If target table is MaterialPrice, update the record and check for price alerts
+    // MaterialPrice and PriceAlert models will be added in a future migration.
+    // When they exist, uncomment and use the block below.
+    //
+    // if (target.targetTable === 'MaterialPrice' && price !== null) {
+    //   const previousPrice = target.lastResult ? parsePrice(target.lastResult) : null
+    //   await prisma.materialPrice.update({
+    //     where: { id: target.targetRecordId },
+    //     data: {
+    //       [target.targetField]: price,
+    //       percentChange: previousPrice ? ((price - previousPrice) / previousPrice) * 100 : null,
+    //       updatedAt: new Date(),
+    //     },
+    //   })
+    //   // Create PriceAlert if change exceeds 10%
+    //   if (previousPrice && Math.abs((price - previousPrice) / previousPrice) > 0.10) {
+    //     await prisma.priceAlert.create({
+    //       data: {
+    //         targetId: target.id,
+    //         previousPrice,
+    //         newPrice: price,
+    //         percentChange: ((price - previousPrice) / previousPrice) * 100,
+    //       },
+    //     })
+    //   }
+    // }
+
+    return { id: target.id, name: target.name, status: 'success', result: rawResult, price }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    await prisma.scraperLog.create({
-      data: { targetId: target.id, status: 'failed', errorMsg },
-    })
-    await prisma.scraperTarget.update({
-      where: { id: target.id },
-      data: { lastScraped: new Date(), lastStatus: 'failed' },
-    })
-    return { id: target.id, status: 'failed', error: errorMsg }
+    try {
+      await prisma.scraperLog.create({
+        data: { targetId: target.id, status: 'failed', errorMsg },
+      })
+      await prisma.scraperTarget.update({
+        where: { id: target.id },
+        data: { lastScraped: new Date(), lastStatus: 'failed' },
+      })
+    } catch (dbErr) {
+      console.error('Failed to log scraper error:', dbErr)
+    }
+    return { id: target.id, name: target.name, status: 'failed', error: errorMsg }
   }
 }
 
@@ -72,61 +96,45 @@ export async function POST(req: NextRequest) {
 
     // Test mode — scrape without saving
     if (testOnly && url && selector) {
-      try {
-        const res = await fetch(url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-        })
-        if (!res.ok) return NextResponse.json({ success: false, error: `HTTP ${res.status}` })
-        const html = await res.text()
-
-        let result: string | null = null
-        const sel = selector.trim()
-
-        if (sel.startsWith('.')) {
-          const className = sel.slice(1).replace(/\./g, '\\s+')
-          const regex = new RegExp(`class="[^"]*${className}[^"]*"[^>]*>([^<]+)`, 'i')
-          const match = html.match(regex)
-          if (match) result = match[1].trim()
-        } else if (sel.startsWith('#')) {
-          const id = sel.slice(1)
-          const regex = new RegExp(`id="${id}"[^>]*>([^<]+)`, 'i')
-          const match = html.match(regex)
-          if (match) result = match[1].trim()
-        } else if (sel.startsWith('[')) {
-          const attr = sel.slice(1, -1)
-          const regex = new RegExp(`${attr}="([^"]+)"`, 'i')
-          const match = html.match(regex)
-          if (match) result = match[1].trim()
-        } else {
-          const regex = new RegExp(`<${sel}[^>]*>([^<]+)</${sel}>`, 'i')
-          const match = html.match(regex)
-          if (match) result = match[1].trim()
-        }
-
-        return NextResponse.json({ success: true, result: result || null, found: !!result })
-      } catch (error) {
-        return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) })
+      const scrapeResult = await runScrape(url, selector)
+      if (scrapeResult.success) {
+        const price = scrapeResult.result ? parsePrice(scrapeResult.result) : null
+        return NextResponse.json({ success: true, result: scrapeResult.result || null, price, found: !!scrapeResult.result })
       }
+      return NextResponse.json({ success: false, error: scrapeResult.error })
     }
 
     // Run single target
     if (targetId) {
       const target = await prisma.scraperTarget.findUnique({ where: { id: targetId } })
       if (!target) return NextResponse.json({ error: 'Target not found' }, { status: 404 })
-      const result = await scrapeTarget(target)
+      const result = await processTarget(target)
       return NextResponse.json({ success: true, results: [result] })
     }
 
     // Run all active targets
     if (runAll) {
       const targets = await prisma.scraperTarget.findMany({ where: { isActive: true } })
-      const results = []
+      const results: RunResult[] = []
+      const failures: { name: string; error: string }[] = []
+
       for (const target of targets) {
-        results.push(await scrapeTarget(target))
+        const result = await processTarget(target)
+        results.push(result)
+        if (result.status === 'failed') {
+          failures.push({ name: target.name, error: result.error || 'Unknown error' })
+        }
       }
+
       const succeeded = results.filter((r) => r.status === 'success').length
       const failed = results.filter((r) => r.status === 'failed').length
-      return NextResponse.json({ success: true, results, summary: { succeeded, failed, total: targets.length } })
+
+      return NextResponse.json({
+        success: true,
+        results,
+        summary: { succeeded, failed, total: targets.length },
+        failures,
+      })
     }
 
     return NextResponse.json({ error: 'Provide targetId, runAll, or testOnly' }, { status: 400 })
