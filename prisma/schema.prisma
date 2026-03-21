@@ -391,6 +391,37 @@ model AppointmentReminder {
   createdAt     DateTime         @default(now())
 }
 
+// ─── Scraper Engine ─────────────────────────────────────────────
+
+model ScraperTarget {
+  id             String        @id @default(cuid())
+  name           String
+  category       String
+  url            String
+  priceSelector  String
+  targetTable    String
+  targetField    String
+  targetRecordId String
+  frequency      String        @default("weekly")
+  isActive       Boolean       @default(true)
+  lastScraped    DateTime?
+  lastResult     String?
+  lastStatus     String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  logs           ScraperLog[]
+}
+
+model ScraperLog {
+  id         String        @id @default(cuid())
+  targetId   String
+  target     ScraperTarget @relation(fields: [targetId], references: [id])
+  result     String?
+  status     String
+  errorMsg   String?
+  scrapedAt  DateTime      @default(now())
+}
+
 // ─── Sage: Social Media Posts ─────────────────────────────────────
 
 model SagePost {

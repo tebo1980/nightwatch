@@ -103,6 +103,7 @@ export default function Dashboard() {
             { name: 'Cole', href: '/cole' },
             { name: 'River', href: '/river' },
             { name: 'Report Generator', href: '/report-generator' },
+            { name: 'Scraper', href: '/scraper' },
           ].map((link) => (
             <Link
               key={link.name}
