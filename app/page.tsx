@@ -102,6 +102,7 @@ export default function Dashboard() {
             { name: 'Flynn', href: '/flynn' },
             { name: 'Cole', href: '/cole' },
             { name: 'River', href: '/river' },
+            { name: 'Report Generator', href: '/report-generator' },
           ].map((link) => (
             <Link
               key={link.name}
