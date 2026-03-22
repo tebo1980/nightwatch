@@ -4,11 +4,14 @@ import { createClient } from '@supabase/supabase-js'
 import React from 'react'
 import { renderToBuffer, Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer'
 
-// ─── Supabase client ────────────────────────────────────────────
+// ─── Supabase client (lazy init to avoid build-time crash) ──────
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseKey = process.env.SUPABASE_ANON_KEY || ''
-const supabase = createClient(supabaseUrl, supabaseKey)
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_ANON_KEY
+  if (!url || !key) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_ANON_KEY')
+  return createClient(url, key)
+}
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -269,6 +272,7 @@ export async function POST(req: NextRequest) {
     // Upload to Supabase Storage
     const filePath = `${estimate.clientId}/${estimate.estimateNumber}.pdf`
 
+    const supabase = getSupabase()
     const { error: uploadError } = await supabase.storage
       .from('estimates')
       .upload(filePath, pdfBuffer, {
