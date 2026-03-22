@@ -103,6 +103,7 @@ export default function Dashboard() {
             { name: 'Cole', href: '/cole', emoji: '📊' },
             { name: 'River', href: '/river', emoji: '🌊' },
             { name: 'Atlas', href: '/atlas', emoji: '🗺️' },
+            { name: 'Bolt', href: '/bolt', emoji: '⚡' },
             { name: 'Scraper', href: '/scraper', emoji: '🕷️' },
             { name: 'Report Generator', href: '/report-generator', emoji: '📝' },
           ].map((link) => (

@@ -481,3 +481,60 @@ model SagePost {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 }
+
+// ─── Bolt: On-Site Estimate Builder ─────────────────────────────────
+
+model ClientBoltConfig {
+  id               String     @id @default(cuid())
+  clientId         String     @unique
+  clientSlug       String     @unique
+  businessName     String
+  businessPhone    String
+  businessEmail    String
+  businessAddress  String?
+  logoUrl          String?
+  licenseNumber    String?
+  insuranceInfo    String?
+  trade            String
+  laborRatePerHour Float      @default(75)
+  minimumJobSize   Float      @default(150)
+  taxRate          Float      @default(0)
+  paymentTerms     String     @default("50% deposit required to schedule. Balance due upon completion.")
+  warrantyTerms    String     @default("All work warranted for 1 year from completion date.")
+  validityDays     Int        @default(14)
+  escalationClause Boolean    @default(true)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  estimates        Estimate[]
+}
+
+model Estimate {
+  id              String           @id @default(cuid())
+  clientId        String
+  boltConfig      ClientBoltConfig @relation(fields: [clientId], references: [clientId])
+  estimateNumber  String           @unique
+  customerName    String
+  customerPhone   String
+  customerEmail   String?
+  customerAddress String
+  jobType         String
+  jobDescription  String
+  lineItems       Json
+  laborHours      Float
+  laborRate       Float
+  laborTotal      Float
+  materialsTotal  Float
+  subtotal        Float
+  taxAmount       Float
+  totalAmount     Float
+  depositRequired Float
+  validUntil      DateTime
+  status          String           @default("draft")
+  sentAt          DateTime?
+  approvedAt      DateTime?
+  notes           String?
+  internalNotes   String?
+  pdfUrl          String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
