@@ -547,14 +547,14 @@ export default function ContractorBoltView() {
                         <div className="text-[10px] text-[#8A8070]">${fmt(m.unitPrice)} / {m.unit}</div>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <button onClick={() => updateQty(m.id, -1)} className="w-8 h-8 rounded-lg bg-[#0E0C0A] text-[#C17B2A] text-sm font-bold flex items-center justify-center">&minus;</button>
+                        <button onClick={() => updateQty(m.id, -1)} className="w-10 h-10 rounded-lg bg-[#0E0C0A] text-[#C17B2A] text-base font-bold flex items-center justify-center">&minus;</button>
                         <input
                           type="number"
                           value={m.quantity}
                           onChange={(e) => setQty(m.id, parseInt(e.target.value) || 1)}
-                          className="w-12 h-8 rounded-lg bg-[#0E0C0A] text-center text-sm text-[#F2EDE4] border border-[rgba(193,123,42,0.2)] focus:outline-none"
+                          className="w-14 h-10 rounded-lg bg-[#0E0C0A] text-center text-base text-[#F2EDE4] border border-[rgba(193,123,42,0.2)] focus:outline-none"
                         />
-                        <button onClick={() => updateQty(m.id, 1)} className="w-8 h-8 rounded-lg bg-[#0E0C0A] text-[#C17B2A] text-sm font-bold flex items-center justify-center">+</button>
+                        <button onClick={() => updateQty(m.id, 1)} className="w-10 h-10 rounded-lg bg-[#0E0C0A] text-[#C17B2A] text-base font-bold flex items-center justify-center">+</button>
                       </div>
                       <div className="text-sm text-[#F2EDE4] font-medium w-16 text-right">${fmt(m.unitPrice * m.quantity)}</div>
                       <button onClick={() => removeMaterial(m.id)} className="w-8 h-8 rounded-lg text-red-400/60 hover:text-red-400 text-sm flex items-center justify-center">&times;</button>
@@ -569,7 +569,7 @@ export default function ContractorBoltView() {
                 value={materialSearch}
                 onChange={(e) => setMaterialSearch(e.target.value)}
                 placeholder="Search materials..."
-                className="w-full bg-[#1E1B16] border border-[rgba(193,123,42,0.2)] rounded-xl px-4 py-3 text-sm text-[#F2EDE4] placeholder-[#555] focus:outline-none focus:border-[#C17B2A]"
+                className="w-full bg-[#1E1B16] border border-[rgba(193,123,42,0.2)] rounded-xl px-4 py-3 text-base text-[#F2EDE4] placeholder-[#555] focus:outline-none focus:border-[#C17B2A]"
               />
 
               {/* Material list */}
@@ -617,11 +617,11 @@ export default function ContractorBoltView() {
               ) : (
                 <div className="bg-[#1E1B16] rounded-xl border border-[rgba(193,123,42,0.2)] p-3 space-y-3">
                   <h3 className="text-xs text-[#C17B2A] font-medium">Add Custom Material</h3>
-                  <input type="text" value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Material name" className="w-full bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-3 py-2.5 text-sm text-[#F2EDE4] placeholder-[#555] focus:outline-none focus:border-[#C17B2A]" />
+                  <input type="text" value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Material name" className="w-full bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-3 py-2.5 text-base text-[#F2EDE4] placeholder-[#555] focus:outline-none focus:border-[#C17B2A]" />
                   <div className="grid grid-cols-3 gap-2">
-                    <input type="number" value={customQty} onChange={(e) => setCustomQty(parseInt(e.target.value) || 1)} placeholder="Qty" className="bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-3 py-2.5 text-sm text-[#F2EDE4] focus:outline-none focus:border-[#C17B2A]" />
-                    <input type="text" value={customUnit} onChange={(e) => setCustomUnit(e.target.value)} placeholder="Unit" className="bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-3 py-2.5 text-sm text-[#F2EDE4] focus:outline-none focus:border-[#C17B2A]" />
-                    <input type="number" step="0.01" value={customPrice || ''} onChange={(e) => setCustomPrice(parseFloat(e.target.value) || 0)} placeholder="Price" className="bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-3 py-2.5 text-sm text-[#F2EDE4] focus:outline-none focus:border-[#C17B2A]" />
+                    <input type="number" value={customQty} onChange={(e) => setCustomQty(parseInt(e.target.value) || 1)} placeholder="Qty" className="bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-3 py-2.5 text-base text-[#F2EDE4] focus:outline-none focus:border-[#C17B2A]" />
+                    <input type="text" value={customUnit} onChange={(e) => setCustomUnit(e.target.value)} placeholder="Unit" className="bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-3 py-2.5 text-base text-[#F2EDE4] focus:outline-none focus:border-[#C17B2A]" />
+                    <input type="number" step="0.01" value={customPrice || ''} onChange={(e) => setCustomPrice(parseFloat(e.target.value) || 0)} placeholder="Price" className="bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-3 py-2.5 text-base text-[#F2EDE4] focus:outline-none focus:border-[#C17B2A]" />
                   </div>
                   <div className="flex gap-2">
                     <button onClick={addCustomMaterial} disabled={!customName || customPrice <= 0} className="flex-1 bg-[#C17B2A] text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-40">Add</button>

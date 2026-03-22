@@ -50,6 +50,7 @@ const TIER_LABELS: Record<string, string> = {
 export default function Dashboard() {
   const [clients, setClients] = useState<AgentClientCard[]>([])
   const [loading, setLoading] = useState(true)
+  const [boltStats, setBoltStats] = useState({ configs: 0, estimatesThisMonth: 0, totalValue: 0 })
 
   useEffect(() => {
     fetch('/api/agent-clients')
@@ -57,6 +58,24 @@ export default function Dashboard() {
       .then((data) => setClients(data.clients || []))
       .catch(() => {})
       .finally(() => setLoading(false))
+    // Load Bolt stats
+    fetch('/api/bolt/config')
+      .then((r) => r.json())
+      .then((data) => {
+        const configs = data.configs || []
+        setBoltStats((s) => ({ ...s, configs: configs.length }))
+        if (configs.length > 0) {
+          const now = new Date()
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+          Promise.all(configs.map((c: { clientId: string }) => fetch(`/api/bolt/estimates?clientId=${c.clientId}`).then((r) => r.json())))
+            .then((results) => {
+              const allEsts = results.flatMap((r: { estimates?: { sentAt: string; totalAmount: number }[] }) => r.estimates || [])
+              const thisMonth = allEsts.filter((e: { sentAt: string }) => e.sentAt && e.sentAt >= monthStart)
+              setBoltStats({ configs: configs.length, estimatesThisMonth: thisMonth.length, totalValue: thisMonth.reduce((s: number, e: { totalAmount: number }) => s + e.totalAmount, 0) })
+            })
+        }
+      })
+      .catch(() => {})
   }, [])
 
   return (
@@ -90,6 +109,31 @@ export default function Dashboard() {
             )
           })}
         </div>
+
+        {/* Bolt Stats */}
+        {boltStats.configs > 0 && (
+          <Link href="/bolt" className="block bg-[#1E1B16] rounded-xl border border-[rgba(193,123,42,0.15)] p-4 mb-8 hover:border-[rgba(193,123,42,0.4)] transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <span className="text-xl">&#9889;</span>
+                <div>
+                  <div className="text-sm font-medium text-[#F2EDE4]">Bolt Estimates</div>
+                  <div className="text-xs text-[#8A8070]">{boltStats.configs} client{boltStats.configs !== 1 ? 's' : ''} configured</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-6">
+                <div className="text-right">
+                  <div className="text-lg font-semibold text-[#C17B2A]">{boltStats.estimatesThisMonth}</div>
+                  <div className="text-[10px] text-[#8A8070]">This Month</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-lg font-semibold text-[#C17B2A]">${boltStats.totalValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                  <div className="text-[10px] text-[#8A8070]">Total Value</div>
+                </div>
+              </div>
+            </div>
+          </Link>
+        )}
 
         {/* Agent Dashboard Links */}
         <div className="flex flex-wrap gap-2 mb-8">

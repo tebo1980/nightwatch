@@ -84,6 +84,13 @@ export default function OnboardingPage() {
   const [form, setForm] = useState<FormData>(initialForm)
   const [submitting, setSubmitting] = useState(false)
   const [createdClient, setCreatedClient] = useState<{ id: string; businessName: string } | null>(null)
+  // Bolt setup (optional post-creation)
+  const [showBoltSetup, setShowBoltSetup] = useState(false)
+  const [boltSlug, setBoltSlug] = useState('')
+  const [boltLaborRate, setBoltLaborRate] = useState(75)
+  const [boltTrade, setBoltTrade] = useState('')
+  const [boltSaving, setBoltSaving] = useState(false)
+  const [boltDone, setBoltDone] = useState(false)
   const [error, setError] = useState('')
 
   const set = (field: keyof FormData, value: string | boolean | number) =>
@@ -107,11 +114,29 @@ export default function OnboardingPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to create client')
       setCreatedClient({ id: data.client.id, businessName: data.client.businessName })
+      setBoltSlug(form.businessName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''))
+      setBoltTrade(form.industry === 'Plumbing' ? 'Plumber' : form.industry === 'HVAC' ? 'HVAC' : form.industry === 'Electrical' ? 'Electrician' : form.industry === 'Painting' ? 'Painter' : form.industry === 'Roofing' ? 'Roofer' : form.industry === 'Landscaping' ? 'Landscaper' : form.industry === 'Contracting' ? 'General Contractor' : 'Handyman')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
       setSubmitting(false)
     }
+  }
+
+  async function setupBolt() {
+    if (!createdClient) return
+    setBoltSaving(true)
+    try {
+      await fetch('/api/bolt/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: createdClient.id, clientSlug: boltSlug, businessName: createdClient.businessName,
+          businessPhone: form.contactPhone, businessEmail: form.ownerEmail, trade: boltTrade, laborRatePerHour: boltLaborRate,
+        }),
+      })
+      setBoltDone(true)
+    } catch { /* */ } finally { setBoltSaving(false) }
   }
 
   if (createdClient) {
@@ -123,6 +148,40 @@ export default function OnboardingPage() {
           </div>
           <h2 className="text-xl font-semibold text-[#F2EDE4] mb-2">Client Created</h2>
           <p className="text-[#8A8070] mb-6">{createdClient.businessName} has been onboarded successfully.</p>
+
+          {/* Bolt setup */}
+          {!boltDone && !showBoltSetup && (
+            <button onClick={() => setShowBoltSetup(true)} className="w-full border border-dashed border-[rgba(193,123,42,0.3)] text-[#C17B2A] px-4 py-3 rounded-lg text-sm mb-4 hover:bg-[rgba(193,123,42,0.05)]">&#9889; Set up Bolt estimate builder? (optional)</button>
+          )}
+          {showBoltSetup && !boltDone && (
+            <div className="bg-[#0E0C0A] rounded-lg p-4 mb-4 text-left space-y-3">
+              <div>
+                <label className="block text-xs text-[#8A8070] mb-1">Client Slug</label>
+                <input type="text" value={boltSlug} onChange={(e) => setBoltSlug(e.target.value)} className="w-full bg-[#1E1B16] border border-[rgba(193,123,42,0.2)] rounded-lg px-3 py-2 text-sm text-[#F2EDE4] font-mono focus:outline-none focus:border-[#C17B2A]" />
+                <p className="text-[10px] text-[#8A8070] mt-1">nightwatch.baratrust.com/bolt/{boltSlug}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-[#8A8070] mb-1">Labor Rate ($/hr)</label>
+                  <input type="number" value={boltLaborRate} onChange={(e) => setBoltLaborRate(parseFloat(e.target.value) || 75)} className="w-full bg-[#1E1B16] border border-[rgba(193,123,42,0.2)] rounded-lg px-3 py-2 text-sm text-[#F2EDE4] focus:outline-none focus:border-[#C17B2A]" />
+                </div>
+                <div>
+                  <label className="block text-xs text-[#8A8070] mb-1">Trade</label>
+                  <select value={boltTrade} onChange={(e) => setBoltTrade(e.target.value)} className="w-full bg-[#1E1B16] border border-[rgba(193,123,42,0.2)] rounded-lg px-3 py-2 text-sm text-[#F2EDE4] focus:outline-none focus:border-[#C17B2A]">
+                    {['Plumber','HVAC','Electrician','General Contractor','Painter','Roofer','Landscaper','Handyman','Deck Builder','Concrete'].map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={setupBolt} disabled={boltSaving || !boltSlug} className="flex-1 bg-[#C17B2A] text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">{boltSaving ? 'Setting up...' : 'Enable Bolt'}</button>
+                <button onClick={() => setShowBoltSetup(false)} className="px-4 py-2 text-sm text-[#8A8070] border border-[rgba(193,123,42,0.2)] rounded-lg">Skip</button>
+              </div>
+            </div>
+          )}
+          {boltDone && (
+            <div className="bg-green-500/10 text-green-400 text-sm px-4 py-2 rounded-lg mb-4">&#9889; Bolt enabled at /bolt/{boltSlug}</div>
+          )}
+
           <div className="flex flex-col gap-3">
             <Link href={`/clients/${createdClient.id}`} className="bg-[#C17B2A] text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-[#D4892F] transition-colors">
               View Client Dashboard
