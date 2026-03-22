@@ -98,7 +98,8 @@ export default function ContractorBoltView() {
 
   // Saving
   const [saving, setSaving] = useState(false)
-  const [savedEstimate, setSavedEstimate] = useState<{ estimateNumber: string } | null>(null)
+  const [savingStatus, setSavingStatus] = useState('')
+  const [savedEstimate, setSavedEstimate] = useState<{ estimateNumber: string; pdfUrl?: string } | null>(null)
 
   // ─── Load config ────────────────────────────────────────────────
 
@@ -196,7 +197,9 @@ export default function ContractorBoltView() {
   async function saveEstimate(status: 'draft' | 'sent') {
     if (!config) return
     setSaving(true)
+    setSavingStatus(status === 'sent' ? 'Saving estimate...' : 'Saving draft...')
     try {
+      // 1. Save estimate to database
       const res = await fetch('/api/bolt/estimates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -222,20 +225,38 @@ export default function ContractorBoltView() {
         }),
       })
       const data = await res.json()
-      if (res.ok && data.estimate) {
-        if (status === 'sent') {
-          await fetch('/api/bolt/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ estimateId: data.estimate.id, method: 'email' }),
-          })
+      if (!res.ok || !data.estimate) return
+
+      let pdfUrl: string | undefined
+
+      if (status === 'sent') {
+        // 2. Generate PDF
+        setSavingStatus('Generating your estimate...')
+        const pdfRes = await fetch('/api/bolt/generate-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ estimateId: data.estimate.id }),
+        })
+        const pdfData = await pdfRes.json()
+        if (pdfData.pdfUrl) {
+          pdfUrl = pdfData.pdfUrl
         }
-        setSavedEstimate(data.estimate)
+
+        // 3. Mark as sent
+        setSavingStatus('Sending to customer...')
+        await fetch('/api/bolt/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ estimateId: data.estimate.id, method: 'email' }),
+        })
       }
+
+      setSavedEstimate({ ...data.estimate, pdfUrl })
     } catch {
       // handled by UI
     } finally {
       setSaving(false)
+      setSavingStatus('')
     }
   }
 
@@ -280,25 +301,37 @@ export default function ContractorBoltView() {
           <div className="text-4xl mb-4">&#9989;</div>
           <h1 className="text-lg font-semibold text-[#F2EDE4] mb-2">Estimate Saved</h1>
           <p className="text-sm text-[#8A8070] mb-1">Estimate #{savedEstimate.estimateNumber}</p>
-          <p className="text-sm text-[#8A8070] mb-6">${fmt(totalAmount)}</p>
-          <button
-            onClick={() => {
-              setSavedEstimate(null)
-              setStep(1)
-              setCustomerName('')
-              setCustomerPhone('')
-              setCustomerEmail('')
-              setCustomerAddress('')
-              setJobType('')
-              setJobDescription('')
-              setLaborHours(2)
-              setSelectedMaterials([])
-              setMaterialSearch('')
-            }}
-            className="bg-[#C17B2A] text-white px-6 py-3 rounded-xl text-sm font-medium hover:bg-[#D4892F] transition-colors"
-          >
-            Create Another Estimate
-          </button>
+          <p className="text-sm text-[#8A8070] mb-4">${fmt(totalAmount)}</p>
+          {savedEstimate.pdfUrl && (
+            <a
+              href={savedEstimate.pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block bg-[#1E1B16] border border-[rgba(193,123,42,0.3)] text-[#C17B2A] px-6 py-3 rounded-xl text-sm font-medium hover:bg-[rgba(193,123,42,0.1)] transition-colors mb-4"
+            >
+              View PDF Estimate
+            </a>
+          )}
+          <div className="pt-2">
+            <button
+              onClick={() => {
+                setSavedEstimate(null)
+                setStep(1)
+                setCustomerName('')
+                setCustomerPhone('')
+                setCustomerEmail('')
+                setCustomerAddress('')
+                setJobType('')
+                setJobDescription('')
+                setLaborHours(2)
+                setSelectedMaterials([])
+                setMaterialSearch('')
+              }}
+              className="bg-[#C17B2A] text-white px-6 py-3 rounded-xl text-sm font-medium hover:bg-[#D4892F] transition-colors"
+            >
+              Create Another Estimate
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -682,7 +715,7 @@ export default function ContractorBoltView() {
                   disabled={saving}
                   className="w-full bg-[#C17B2A] text-white py-4 rounded-xl text-base font-medium hover:bg-[#D4892F] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {saving ? 'Saving...' : <><span>&#128228;</span> Send to Customer</>}
+                  {saving ? (savingStatus || 'Saving...') : <><span>&#128228;</span> Send to Customer</>}
                 </button>
                 <button
                   onClick={() => saveEstimate('draft')}

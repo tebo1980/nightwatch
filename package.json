@@ -11,6 +11,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.79.0",
     "@prisma/client": "^5.22.0",
+    "@react-pdf/renderer": "^4.3.2",
     "@sparticuz/chromium": "^143.0.4",
     "@supabase/supabase-js": "^2.99.2",
     "googleapis": "^171.4.0",
@@ -23,6 +24,9 @@
     "twilio": "^5.13.0",
     "uuid": "^13.0.0"
   },
+  "prisma": {
+    "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
@@ -32,6 +36,7 @@
     "eslint": "^9",
     "eslint-config-next": "^15.5.13",
     "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
     "typescript": "^5"
   }
 }
