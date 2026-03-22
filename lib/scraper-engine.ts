@@ -212,13 +212,22 @@ async function scrapeWithScrapingBee(url: string, selector: string): Promise<{
       return { success: false, error: 'ScrapingBee API key not configured' }
     }
 
+    // ScrapingBee uses extract_rules to target CSS selectors and return text
+    const extractRules = JSON.stringify({
+      price: {
+        selector: selector,
+        type: 'item',
+        output: 'text',
+      },
+    })
+
     const params = new URLSearchParams({
       api_key: apiKey,
       url: url,
-      css_selector: selector,
       render_js: 'true',
       wait: '3000',
       premium_proxy: 'true',
+      extract_rules: extractRules,
     })
 
     const response = await fetch(
@@ -238,13 +247,28 @@ async function scrapeWithScrapingBee(url: string, selector: string): Promise<{
     }
 
     const text = await response.text()
-    const cleaned = text.trim()
 
-    if (!cleaned || cleaned.length === 0) {
-      return { success: false, error: 'ScrapingBee returned empty response' }
+    // ScrapingBee returns JSON when extract_rules is used: {"price": "..."}
+    try {
+      const json = JSON.parse(text)
+      const priceText = json.price
+      if (typeof priceText === 'string' && priceText.trim().length > 0) {
+        return { success: true, result: priceText.trim() }
+      }
+      // If price is an array (multiple matches), take the first
+      if (Array.isArray(priceText) && priceText.length > 0) {
+        const first = String(priceText[0]).trim()
+        if (first.length > 0) return { success: true, result: first }
+      }
+      return { success: false, error: 'ScrapingBee found no text matching the selector' }
+    } catch {
+      // If not JSON, treat as raw text
+      const cleaned = text.trim()
+      if (!cleaned || cleaned.length === 0) {
+        return { success: false, error: 'ScrapingBee returned empty response' }
+      }
+      return { success: true, result: cleaned }
     }
-
-    return { success: true, result: cleaned }
   } catch (error) {
     return {
       success: false,
