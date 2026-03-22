@@ -96,10 +96,13 @@ export default function ContractorBoltView() {
   const [customUnit, setCustomUnit] = useState('each')
   const [customPrice, setCustomPrice] = useState(0)
 
-  // Saving
+  // Saving & sending
   const [saving, setSaving] = useState(false)
   const [savingStatus, setSavingStatus] = useState('')
-  const [savedEstimate, setSavedEstimate] = useState<{ estimateNumber: string; pdfUrl?: string } | null>(null)
+  const [pendingEstimate, setPendingEstimate] = useState<{ id: string; estimateNumber: string; pdfUrl?: string } | null>(null)
+  const [sendMethod, setSendMethod] = useState<'sms' | 'email' | 'both'>('sms')
+  const [sentEstimate, setSentEstimate] = useState<{ estimateNumber: string; pdfUrl?: string; sendMethod: string } | null>(null)
+  const [savedDraft, setSavedDraft] = useState<{ estimateNumber: string } | null>(null)
 
   // ─── Load config ────────────────────────────────────────────────
 
@@ -194,70 +197,85 @@ export default function ContractorBoltView() {
 
   // ─── Save estimate ─────────────────────────────────────────────
 
-  async function saveEstimate(status: 'draft' | 'sent') {
+  function resetForm() {
+    setStep(1)
+    setCustomerName('')
+    setCustomerPhone('')
+    setCustomerEmail('')
+    setCustomerAddress('')
+    setJobType('')
+    setJobDescription('')
+    setLaborHours(2)
+    setSelectedMaterials([])
+    setMaterialSearch('')
+    setPendingEstimate(null)
+    setSentEstimate(null)
+    setSavedDraft(null)
+  }
+
+  async function saveDraft() {
     if (!config) return
     setSaving(true)
-    setSavingStatus(status === 'sent' ? 'Saving estimate...' : 'Saving draft...')
+    setSavingStatus('Saving draft...')
     try {
-      // 1. Save estimate to database
       const res = await fetch('/api/bolt/estimates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clientId: config.clientId,
-          customerName,
-          customerPhone,
-          customerEmail,
-          customerAddress,
-          jobType,
-          jobDescription,
-          lineItems: selectedMaterials.map((m) => ({
-            name: m.name, unit: m.unit, unitPrice: m.unitPrice, quantity: m.quantity, total: m.unitPrice * m.quantity,
-          })),
-          laborHours,
-          laborRate,
-          laborTotal,
-          materialsTotal,
-          subtotal,
-          taxAmount,
-          totalAmount,
-          depositRequired,
+          clientId: config.clientId, customerName, customerPhone, customerEmail, customerAddress,
+          jobType, jobDescription,
+          lineItems: selectedMaterials.map((m) => ({ name: m.name, unit: m.unit, unitPrice: m.unitPrice, quantity: m.quantity, total: m.unitPrice * m.quantity })),
+          laborHours, laborRate, laborTotal, materialsTotal, subtotal, taxAmount, totalAmount, depositRequired,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok && data.estimate) setSavedDraft(data.estimate)
+    } catch { /* */ } finally { setSaving(false); setSavingStatus('') }
+  }
+
+  async function prepareToSend() {
+    if (!config) return
+    setSaving(true)
+    setSavingStatus('Saving estimate...')
+    try {
+      const res = await fetch('/api/bolt/estimates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: config.clientId, customerName, customerPhone, customerEmail, customerAddress,
+          jobType, jobDescription,
+          lineItems: selectedMaterials.map((m) => ({ name: m.name, unit: m.unit, unitPrice: m.unitPrice, quantity: m.quantity, total: m.unitPrice * m.quantity })),
+          laborHours, laborRate, laborTotal, materialsTotal, subtotal, taxAmount, totalAmount, depositRequired,
         }),
       })
       const data = await res.json()
       if (!res.ok || !data.estimate) return
 
-      let pdfUrl: string | undefined
+      setSavingStatus('Generating your estimate...')
+      const pdfRes = await fetch('/api/bolt/generate-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estimateId: data.estimate.id }),
+      })
+      const pdfData = await pdfRes.json()
 
-      if (status === 'sent') {
-        // 2. Generate PDF
-        setSavingStatus('Generating your estimate...')
-        const pdfRes = await fetch('/api/bolt/generate-pdf', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ estimateId: data.estimate.id }),
-        })
-        const pdfData = await pdfRes.json()
-        if (pdfData.pdfUrl) {
-          pdfUrl = pdfData.pdfUrl
-        }
+      setPendingEstimate({ id: data.estimate.id, estimateNumber: data.estimate.estimateNumber, pdfUrl: pdfData.pdfUrl })
+      setStep(5)
+    } catch { /* */ } finally { setSaving(false); setSavingStatus('') }
+  }
 
-        // 3. Mark as sent
-        setSavingStatus('Sending to customer...')
-        await fetch('/api/bolt/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ estimateId: data.estimate.id, method: 'email' }),
-        })
-      }
-
-      setSavedEstimate({ ...data.estimate, pdfUrl })
-    } catch {
-      // handled by UI
-    } finally {
-      setSaving(false)
-      setSavingStatus('')
-    }
+  async function sendEstimate() {
+    if (!pendingEstimate) return
+    setSaving(true)
+    setSavingStatus('Sending your estimate...')
+    try {
+      await fetch('/api/bolt/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estimateId: pendingEstimate.id, sendMethod }),
+      })
+      setSentEstimate({ estimateNumber: pendingEstimate.estimateNumber, pdfUrl: pendingEstimate.pdfUrl, sendMethod })
+    } catch { /* */ } finally { setSaving(false); setSavingStatus('') }
   }
 
   // ─── Filtered materials ─────────────────────────────────────────
@@ -294,43 +312,49 @@ export default function ContractorBoltView() {
 
   // ─── Success state ──────────────────────────────────────────────
 
-  if (savedEstimate) {
+  // ─── Sent success state ────────────────────────────────────────
+  if (sentEstimate) {
+    const methodLabel = sentEstimate.sendMethod === 'both' ? 'Text & Email' : sentEstimate.sendMethod === 'sms' ? 'Text Message' : 'Email'
     return (
       <div className="min-h-screen bg-[#0E0C0A] flex items-center justify-center p-6">
         <div className="text-center max-w-sm">
-          <div className="text-4xl mb-4">&#9989;</div>
-          <h1 className="text-lg font-semibold text-[#F2EDE4] mb-2">Estimate Saved</h1>
-          <p className="text-sm text-[#8A8070] mb-1">Estimate #{savedEstimate.estimateNumber}</p>
-          <p className="text-sm text-[#8A8070] mb-4">${fmt(totalAmount)}</p>
-          {savedEstimate.pdfUrl && (
-            <a
-              href={savedEstimate.pdfUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block bg-[#1E1B16] border border-[rgba(193,123,42,0.3)] text-[#C17B2A] px-6 py-3 rounded-xl text-sm font-medium hover:bg-[rgba(193,123,42,0.1)] transition-colors mb-4"
-            >
-              View PDF Estimate
-            </a>
-          )}
-          <div className="pt-2">
-            <button
-              onClick={() => {
-                setSavedEstimate(null)
-                setStep(1)
-                setCustomerName('')
-                setCustomerPhone('')
-                setCustomerEmail('')
-                setCustomerAddress('')
-                setJobType('')
-                setJobDescription('')
-                setLaborHours(2)
-                setSelectedMaterials([])
-                setMaterialSearch('')
-              }}
-              className="bg-[#C17B2A] text-white px-6 py-3 rounded-xl text-sm font-medium hover:bg-[#D4892F] transition-colors"
-            >
-              Create Another Estimate
-            </button>
+          <div className="text-5xl mb-4">&#9989;</div>
+          <h1 className="text-xl font-semibold text-[#F2EDE4] mb-1">Estimate Sent!</h1>
+          <p className="text-sm text-[#8A8070] mb-6">{customerName} will receive your estimate shortly.</p>
+          <div className="bg-[#1E1B16] rounded-xl border border-[rgba(193,123,42,0.15)] p-4 mb-6 text-left">
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-[#8A8070]">Amount</span>
+              <span className="text-[#C17B2A] font-semibold">${fmt(totalAmount)}</span>
+            </div>
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-[#8A8070]">Sent via</span>
+              <span className="text-[#F2EDE4]">{methodLabel}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-[#8A8070]">Estimate</span>
+              <span className="text-[#F2EDE4] font-mono text-xs">#{sentEstimate.estimateNumber}</span>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <button onClick={resetForm} className="w-full bg-[#C17B2A] text-white py-3.5 rounded-xl text-sm font-medium hover:bg-[#D4892F] transition-colors">&#9889; New Estimate</button>
+            <a href="/bolt" className="block w-full border border-[rgba(193,123,42,0.3)] text-[#C17B2A] py-3.5 rounded-xl text-sm font-medium hover:bg-[rgba(193,123,42,0.05)] transition-colors text-center">&#128203; View All Estimates</a>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── Draft saved state ────────────────────────────────────────
+  if (savedDraft) {
+    return (
+      <div className="min-h-screen bg-[#0E0C0A] flex items-center justify-center p-6">
+        <div className="text-center max-w-sm">
+          <div className="text-4xl mb-4">&#128190;</div>
+          <h1 className="text-lg font-semibold text-[#F2EDE4] mb-2">Estimate saved as draft</h1>
+          <p className="text-sm text-[#8A8070] mb-6">#{savedDraft.estimateNumber}</p>
+          <div className="space-y-3">
+            <button onClick={resetForm} className="w-full bg-[#C17B2A] text-white py-3.5 rounded-xl text-sm font-medium hover:bg-[#D4892F] transition-colors">&#9889; New Estimate</button>
+            <a href="/bolt" className="block w-full border border-[rgba(193,123,42,0.3)] text-[#C17B2A] py-3.5 rounded-xl text-sm font-medium hover:bg-[rgba(193,123,42,0.05)] transition-colors text-center">&#128203; View All Estimates</a>
           </div>
         </div>
       </div>
@@ -339,7 +363,7 @@ export default function ContractorBoltView() {
 
   // ─── Step labels ────────────────────────────────────────────────
 
-  const STEPS = ['Customer', 'Job', 'Materials', 'Review']
+  const STEPS = ['Customer', 'Job', 'Materials', 'Review', 'Send']
 
   return (
     <div className="min-h-screen bg-[#0E0C0A] pb-24">
@@ -711,20 +735,90 @@ export default function ContractorBoltView() {
               {/* Action buttons */}
               <div className="space-y-3 pt-2">
                 <button
-                  onClick={() => saveEstimate('sent')}
+                  onClick={prepareToSend}
                   disabled={saving}
                   className="w-full bg-[#C17B2A] text-white py-4 rounded-xl text-base font-medium hover:bg-[#D4892F] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {saving ? (savingStatus || 'Saving...') : <><span>&#128228;</span> Send to Customer</>}
                 </button>
                 <button
-                  onClick={() => saveEstimate('draft')}
+                  onClick={saveDraft}
                   disabled={saving}
                   className="w-full border border-[rgba(193,123,42,0.3)] text-[#C17B2A] py-4 rounded-xl text-base font-medium hover:bg-[rgba(193,123,42,0.05)] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {saving ? 'Saving...' : <><span>&#128190;</span> Save as Draft</>}
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* ═══ STEP 5 — Send ═══ */}
+          {step === 5 && pendingEstimate && (
+            <div className="space-y-5 pb-8">
+              <button onClick={() => setStep(4)} className="text-sm text-[#8A8070] hover:text-[#C17B2A] mb-1">&larr; Back</button>
+              <h2 className="text-base font-medium text-[#F2EDE4]">Send Estimate</h2>
+
+              {/* Method selector */}
+              <div className="space-y-2">
+                <label className="block text-xs text-[#8A8070] mb-1">How would you like to send it?</label>
+                {([
+                  { value: 'sms' as const, icon: '\uD83D\uDCF1', label: 'Text Message' },
+                  { value: 'email' as const, icon: '\uD83D\uDCE7', label: 'Email' },
+                  { value: 'both' as const, icon: '\uD83D\uDCF1\uD83D\uDCE7', label: 'Both' },
+                ]).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setSendMethod(opt.value)}
+                    className={`w-full flex items-center gap-3 px-4 py-4 rounded-xl text-left text-base transition-colors ${
+                      sendMethod === opt.value
+                        ? 'bg-[rgba(193,123,42,0.15)] border-2 border-[#C17B2A] text-[#F2EDE4]'
+                        : 'bg-[#1E1B16] border-2 border-transparent text-[#8A8070]'
+                    }`}
+                  >
+                    <span className="text-xl">{opt.icon}</span>
+                    <span className="font-medium">{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Send preview */}
+              <div className="bg-[#1E1B16] rounded-xl border border-[rgba(193,123,42,0.15)] p-4">
+                <div className="text-xs text-[#8A8070] uppercase tracking-wide mb-3">Sending to</div>
+                <div className="text-sm text-[#F2EDE4] font-medium mb-2">{customerName}</div>
+                {(sendMethod === 'sms' || sendMethod === 'both') && (
+                  <div className="text-sm text-[#8A8070] mb-1">{'\uD83D\uDCF1'} {customerPhone}</div>
+                )}
+                {(sendMethod === 'email' || sendMethod === 'both') && (
+                  <div className="text-sm text-[#8A8070]">{'\uD83D\uDCE7'} {customerEmail || <span className="text-red-400">No email on file</span>}</div>
+                )}
+              </div>
+
+              {/* Preview of what will be sent */}
+              {(sendMethod === 'sms' || sendMethod === 'both') && (
+                <div className="bg-[#1E1B16] rounded-xl border border-[rgba(193,123,42,0.15)] p-4">
+                  <div className="text-xs text-[#8A8070] uppercase tracking-wide mb-2">SMS Preview</div>
+                  <p className="text-xs text-[#F2EDE4] leading-relaxed">
+                    Hi {customerName}, {config.businessName} sent you an estimate for {jobType}. Total: ${fmt(totalAmount)}. View and approve online. Valid til {new Date(Date.now() + config.validityDays * 86400000).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}. Call {config.businessPhone} w/ questions.
+                  </p>
+                </div>
+              )}
+              {(sendMethod === 'email' || sendMethod === 'both') && (
+                <div className="bg-[#1E1B16] rounded-xl border border-[rgba(193,123,42,0.15)] p-4">
+                  <div className="text-xs text-[#8A8070] uppercase tracking-wide mb-2">Email Subject</div>
+                  <p className="text-xs text-[#F2EDE4]">Your Estimate from {config.businessName} — {jobType} #{pendingEstimate.estimateNumber}</p>
+                </div>
+              )}
+
+              <button
+                onClick={sendEstimate}
+                disabled={saving || ((sendMethod === 'email' || sendMethod === 'both') && !customerEmail)}
+                className="w-full bg-[#C17B2A] text-white py-4 rounded-xl text-base font-medium hover:bg-[#D4892F] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {saving ? (savingStatus || 'Sending...') : 'Send Estimate'}
+              </button>
+              {(sendMethod === 'email' || sendMethod === 'both') && !customerEmail && (
+                <p className="text-xs text-red-400 text-center">Cannot send email — no customer email address on file.</p>
+              )}
             </div>
           )}
 
