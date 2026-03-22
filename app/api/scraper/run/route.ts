@@ -56,6 +56,31 @@ async function processTarget(target: {
     const rawResult = scrapeResult.result || ''
     const price = parsePrice(rawResult)
 
+    // Reject $0.00 prices — indicates bot detection serving fake/empty price
+    if (price !== null && price === 0) {
+      await prisma.scraperLog.create({
+        data: {
+          targetId: target.id,
+          status: 'failed',
+          result: rawResult,
+          errorMsg: 'Price returned as $0.00 — likely bot detection serving empty price',
+          isReferenceFailure: isRef,
+        },
+      })
+      await prisma.scraperTarget.update({
+        where: { id: target.id },
+        data: { lastScraped: new Date(), lastStatus: 'failed' },
+      })
+      return {
+        id: target.id,
+        name: target.name,
+        status: 'failed',
+        result: rawResult,
+        error: 'Price returned as $0.00 — bot detection detected',
+        isReference: isRef,
+      }
+    }
+
     // Update the scraper target record
     await prisma.scraperTarget.update({
       where: { id: target.id },

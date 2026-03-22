@@ -6,16 +6,23 @@ ACTIVE SOURCES
 ================================================
 
 PRIMARY SOURCES (included in currentPrice average):
-  Home Depot      homedepot.com         All trades
-  Lowes           lowes.com             All trades
   Menards         menards.com           GC, Deck, Painter, Handyman, Concrete
   SupplyHouse     supplyhouse.com       Plumber, HVAC only
   Sherwin-Williams sherwin-williams.com  Painter only — paint and primer only
 
+BLOCKED PRIMARY SOURCES (manual pricing only — enterprise anti-scraping):
+  Home Depot      homedepot.com         BLOCKED — Akamai bot protection + XHR auth
+  Lowes           lowes.com             BLOCKED — Imperva/Incapsula blocks all proxies
+  HD and Lowes seed data prices are manually maintained via Atlas admin.
+  Future path: HD Affiliate API or Bright Data residential sessions.
+
 REFERENCE SOURCES (stored separately, never in average, never trigger alerts):
   Amazon          amazon.com            Handyman, small commodity
-  Walmart         walmart.com           Handyman, Painter
   Target          target.com            Handyman, Painter
+
+BLOCKED REFERENCE SOURCES (manual pricing only):
+  Walmart         walmart.com           BLOCKED — PerimeterX bot detection
+  Future path: Walmart Affiliate API (requires approval).
 
 ================================================
 STORE CSS SELECTORS (confirmed working)
@@ -27,24 +34,35 @@ STORE CSS SELECTORS (confirmed working)
     Target:           [data-test="product-price"]
 
   ScrapingBee (proxy bypass required):
-    Home Depot:       [data-component*="price:Price"]
-    Lowes:            .item-price-dollar
-    Walmart:          [data-testid="price-wrap"]
-    Sherwin-Williams: find selector after bypass confirmed
+    Sherwin-Williams: .price (with render_js)
 
   Menards (Puppeteer — page loads, lazy price rendering):
     Try in sequence:  .price-big-val, [class*="price"], .price
     Requires:         3000ms wait after page load
 
+  BLOCKED (selectors valid but anti-bot defeats all methods):
+    Home Depot:       [data-component*="price:Price"] — returns $0.00 via XHR auth
+    Lowes:            .item-price-dollar — ScrapingBee returns 500
+    Walmart:          [data-testid="price-wrap"] — 412/headers overflow
+
 ================================================
 SCRAPING METHODS
 ================================================
-  ScrapingBee API:  HomeDepot, Lowes, Walmart, SherwinWilliams
+  ScrapingBee API:  SherwinWilliams
   Puppeteer:        Amazon, Target, SupplyHouse, Menards, all others
+  Manual (blocked): HomeDepot, Lowes, Walmart — seed data + Atlas admin
 
 ================================================
 KNOWN LIMITATIONS
 ================================================
+  - Home Depot: Enterprise Akamai protection. Stealth proxy returns 744KB
+    HTML with $0.00 price. Real price loaded via authenticated XHR that
+    requires valid session cookies from a real browser. GraphQL API returns
+    206 "Generic errors". REST APIs return 403.
+  - Lowes: Imperva/Incapsula protection. ScrapingBee returns 500.
+    All API endpoints return 403.
+  - Walmart: PerimeterX protection. APIs return 412 Precondition Failed.
+    ScrapingBee headers overflow from massive response payload.
   - Amazon, Target: aggressive bot detection, expect occasional failures
   - Sherwin-Williams: JavaScript-rendered prices, ScrapingBee with render_js
   - Menards: lazy-loaded prices, requires 3s wait + fallback selectors
@@ -122,7 +140,17 @@ import puppeteer from 'puppeteer-core'
 
 // ─── Store routing ────────────────────────────────────────────────
 // These stores are routed through ScrapingBee API instead of Puppeteer
-const SCRAPINGBEE_STORES = ['HomeDepot', 'Lowes', 'Walmart', 'SherwinWilliams']
+const SCRAPINGBEE_STORES = ['SherwinWilliams']
+
+// ─── Blocked stores (enterprise anti-scraping) ───────────────────
+// HD, Lowes, Walmart have enterprise-grade bot protection that defeats
+// all automated price retrieval including ScrapingBee premium proxies:
+//   Home Depot:  Returns 744KB HTML but $0.00 price (XHR auth required)
+//   Lowes:       ScrapingBee returns 500 (Imperva/Incapsula blocks proxy traffic)
+//   Walmart:     412 Precondition Failed / headers overflow (PerimeterX)
+// Use manual pricing via seed data or Atlas admin until API partnerships
+// are established (HD Affiliate API, Walmart Affiliate API).
+const BLOCKED_STORES = ['HomeDepot', 'Lowes', 'Walmart']
 
 // Menards fallback selectors — try in sequence until one works
 const MENARDS_SELECTORS = ['.price-big-val', '[class*="price"]', '.price']
@@ -383,6 +411,15 @@ export async function scrapeTarget(
   result?: string
   error?: string
 }> {
+  // Skip blocked stores — enterprise anti-scraping defeats all automated methods
+  if (sourceStore && BLOCKED_STORES.includes(sourceStore)) {
+    console.log(`[Scraper] Skipping ${sourceStore} — blocked by enterprise anti-scraping. Use manual pricing.`)
+    return {
+      success: false,
+      error: `${sourceStore} blocks all automated price retrieval (enterprise anti-bot protection). Use manual pricing via Atlas admin.`,
+    }
+  }
+
   // Route ScrapingBee stores through the API
   if (sourceStore && SCRAPINGBEE_STORES.includes(sourceStore)) {
     console.log(`[Scraper] Using ScrapingBee for ${sourceStore}: ${url.slice(0, 60)}...`)

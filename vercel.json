@@ -1,28 +1,16 @@
 {
   "functions": {
-    "app/api/**": {
-      "maxDuration": 30
+    "app/api/scraper/run/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/scraper/test/route.ts": {
+      "maxDuration": 60
     },
     "app/api/cron/scrape/route.ts": {
       "maxDuration": 300
-    },
-    "app/api/scraper/run/route.ts": {
-      "maxDuration": 60
     }
   },
   "crons": [
-    {
-      "path": "/api/rex/scrape",
-      "schedule": "0 8 * * *"
-    },
-    {
-      "path": "/api/iris/process",
-      "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/max/process",
-      "schedule": "0 10 * * *"
-    },
     {
       "path": "/api/cron/scrape",
       "schedule": "0 6 * * 0"
