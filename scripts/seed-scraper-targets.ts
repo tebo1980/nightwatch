@@ -1,101 +1,221 @@
 /**
- * Seed ScraperTarget records from MaterialPrice records that have a sourceUrl.
+ * Seed ScraperTarget records from MaterialPrice records with multi-source support.
  *
  * Run after Atlas seed is complete:
  *   npx tsx scripts/seed-scraper-targets.ts
  *
- * Prerequisites:
- *   - MaterialPrice model must exist in prisma/schema.prisma
- *   - Atlas seed must have populated MaterialPrice records with sourceUrl values
- *   - Run `npx prisma generate` if schema has changed
+ * Creates ScraperTargets for each MaterialPrice across all applicable stores.
+ * Each trade gets different stores based on the classification rules:
  *
- * This script creates a ScraperTarget for each MaterialPrice that has a sourceUrl,
- * pointing back to the MaterialPrice table so the weekly cron can auto-update prices.
+ * PRIMARY (included in currentPrice average):
+ *   Home Depot      — all trades
+ *   Lowes           — all trades
+ *   Menards         — GC, Deck Builder, Painter, Handyman, Concrete
+ *   SupplyHouse     — Plumber, HVAC only
+ *   Sherwin-Williams— Painter only (paint and primer only)
+ *
+ * REFERENCE (stored separately, never in average, never trigger alerts):
+ *   Amazon          — Handyman, small commodity
+ *   Walmart         — Handyman, Painter
+ *   Target          — Handyman, Painter
  */
 
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
-// Default CSS selectors for known retailers
-function guessSelector(url: string): string {
-  if (url.includes('homedepot.com')) return '.price-format__main-price'
-  if (url.includes('lowes.com')) return '.main-price'
-  if (url.includes('menards.com')) return '.price-label'
-  if (url.includes('amazon.com')) return '.a-price-whole'
-  return '.price' // generic fallback
+// ─── Store configuration ──────────────────────────────────────
+
+interface StoreConfig {
+  name: string
+  domain: string
+  selector: string
+  isPrimary: boolean
+  isReference: boolean
+  applicableTrades: string[] | 'all'
+  // For stores like SW that only apply to certain material types
+  materialFilter?: (materialName: string) => boolean
 }
 
-function guessCategory(url: string): string {
-  if (url.includes('homedepot.com') || url.includes('lowes.com') || url.includes('menards.com')) return 'Materials'
-  return 'Other'
+const STORES: StoreConfig[] = [
+  {
+    name: 'HomeDepot',
+    domain: 'homedepot.com',
+    selector: '.price-format__main-price',
+    isPrimary: true,
+    isReference: false,
+    applicableTrades: 'all',
+  },
+  {
+    name: 'Lowes',
+    domain: 'lowes.com',
+    selector: '[data-selector="price"]',
+    isPrimary: true,
+    isReference: false,
+    applicableTrades: 'all',
+  },
+  {
+    name: 'Menards',
+    domain: 'menards.com',
+    selector: '.price-label',
+    isPrimary: true,
+    isReference: false,
+    applicableTrades: ['General Contractor', 'Deck Builder', 'Painter', 'Handyman', 'Concrete'],
+  },
+  {
+    name: 'SupplyHouse',
+    domain: 'supplyhouse.com',
+    selector: '.price',
+    isPrimary: true,
+    isReference: false,
+    applicableTrades: ['Plumber', 'HVAC'],
+  },
+  {
+    name: 'SherwinWilliams',
+    domain: 'sherwin-williams.com',
+    selector: '.price',
+    isPrimary: true,
+    isReference: false,
+    applicableTrades: ['Painter'],
+    // Only paint and primer, not sundries like tape/rollers
+    materialFilter: (name: string) => {
+      const lower = name.toLowerCase()
+      return lower.includes('paint') || lower.includes('primer') || lower.includes('stain')
+    },
+  },
+  {
+    name: 'Amazon',
+    domain: 'amazon.com',
+    selector: '.a-price-whole',
+    isPrimary: false,
+    isReference: true,
+    applicableTrades: ['Handyman'],
+  },
+  {
+    name: 'Walmart',
+    domain: 'walmart.com',
+    selector: '[data-automation-id="product-price"] span',
+    isPrimary: false,
+    isReference: true,
+    applicableTrades: ['Handyman', 'Painter'],
+  },
+  {
+    name: 'Target',
+    domain: 'target.com',
+    selector: '[data-test="product-price"]',
+    isPrimary: false,
+    isReference: true,
+    applicableTrades: ['Handyman', 'Painter'],
+  },
+]
+
+function isStoreApplicable(store: StoreConfig, trade: string, materialName: string): boolean {
+  // Check trade applicability
+  if (store.applicableTrades !== 'all' && !store.applicableTrades.includes(trade)) {
+    return false
+  }
+  // Check material filter (e.g., SW only for paint/primer)
+  if (store.materialFilter && !store.materialFilter(materialName)) {
+    return false
+  }
+  return true
 }
+
+// ─── Main seed function ──────────────────────────────────────
 
 async function main() {
-  console.log('Seeding ScraperTargets from MaterialPrice records...\n')
+  console.log('═══════════════════════════════════════════════════════')
+  console.log('  BARATRUST SCRAPER TARGET SEED — Multi-Source')
+  console.log('═══════════════════════════════════════════════════════\n')
 
-  // Check if MaterialPrice table exists
   try {
-    // @ts-expect-error — MaterialPrice may not exist in generated client yet
     const materials = await prisma.materialPrice.findMany({
-      where: {
-        sourceUrl: { not: null },
-      },
+      orderBy: [{ trade: 'asc' }, { name: 'asc' }],
     })
 
     if (materials.length === 0) {
-      console.log('No MaterialPrice records with sourceUrl found. Nothing to seed.')
+      console.log('No MaterialPrice records found. Run the Atlas seed first.')
       return
     }
 
-    console.log(`Found ${materials.length} MaterialPrice records with sourceUrl.\n`)
+    console.log(`Found ${materials.length} materials.\n`)
 
+    // Tracking
+    const storeCounts: Record<string, number> = {}
+    const tradeCounts: Record<string, number> = {}
     let created = 0
     let skipped = 0
 
     for (const mat of materials) {
-      if (!mat.sourceUrl) continue
+      for (const store of STORES) {
+        if (!isStoreApplicable(store, mat.trade, mat.name)) continue
 
-      // Check if a ScraperTarget already exists for this record
-      const existing = await prisma.scraperTarget.findFirst({
-        where: {
-          targetTable: 'MaterialPrice',
-          targetRecordId: mat.id,
-        },
-      })
+        // Check if target already exists for this material + store
+        const existing = await prisma.scraperTarget.findFirst({
+          where: {
+            targetTable: 'MaterialPrice',
+            targetRecordId: mat.id,
+            sourceStore: store.name,
+          },
+        })
 
-      if (existing) {
-        console.log(`  SKIP: ${mat.name || mat.id} — target already exists`)
-        skipped++
-        continue
+        if (existing) {
+          skipped++
+          continue
+        }
+
+        // Build a search URL (placeholder — actual URLs would come from product matching)
+        const searchUrl = mat.sourceUrl && mat.sourceUrl.includes(store.domain)
+          ? mat.sourceUrl
+          : `https://www.${store.domain}/search?q=${encodeURIComponent(mat.name)}`
+
+        await prisma.scraperTarget.create({
+          data: {
+            name: `${mat.name} — ${store.name}`,
+            category: 'Materials',
+            url: mat.sourceUrl && mat.sourceUrl.includes(store.domain) ? mat.sourceUrl : searchUrl,
+            priceSelector: store.selector,
+            targetTable: 'MaterialPrice',
+            targetField: 'currentPrice',
+            targetRecordId: mat.id,
+            frequency: 'weekly',
+            isActive: true,
+            sourceStore: store.name,
+            isPrimary: store.isPrimary,
+            isReference: store.isReference,
+          },
+        })
+
+        storeCounts[store.name] = (storeCounts[store.name] || 0) + 1
+        tradeCounts[mat.trade] = (tradeCounts[mat.trade] || 0) + 1
+        created++
       }
-
-      const selector = guessSelector(mat.sourceUrl)
-      const category = guessCategory(mat.sourceUrl)
-
-      await prisma.scraperTarget.create({
-        data: {
-          name: mat.name || `Material ${mat.id}`,
-          category,
-          url: mat.sourceUrl,
-          priceSelector: selector,
-          targetTable: 'MaterialPrice',
-          targetField: 'currentPrice',
-          targetRecordId: mat.id,
-          frequency: 'weekly',
-          isActive: true,
-        },
-      })
-
-      console.log(`  CREATED: ${mat.name || mat.id} → ${selector}`)
-      created++
     }
 
-    console.log(`\nDone. Created: ${created}, Skipped: ${skipped}`)
+    // Summary
+    console.log('\n═══════════════════════════════════════════════════════')
+    console.log('  SEED SUMMARY')
+    console.log('═══════════════════════════════════════════════════════')
+    console.log(`  Total created: ${created}`)
+    console.log(`  Skipped (existing): ${skipped}\n`)
+
+    console.log('  By Store:')
+    for (const [store, count] of Object.entries(storeCounts).sort()) {
+      const storeConf = STORES.find((s) => s.name === store)
+      const label = storeConf?.isReference ? ' (Reference)' : ' (Primary)'
+      console.log(`    ${store}: ${count} targets${label}`)
+    }
+
+    console.log('\n  By Trade:')
+    for (const [trade, count] of Object.entries(tradeCounts).sort()) {
+      console.log(`    ${trade}: ${count} targets`)
+    }
+
+    console.log('\n═══════════════════════════════════════════════════════\n')
   } catch (error) {
     if (String(error).includes('does not exist') || String(error).includes('materialPrice')) {
       console.log('MaterialPrice table does not exist yet.')
-      console.log('Run this script after Atlas (Step 9) has been built and seeded.')
+      console.log('Run this script after Atlas has been built and the migration applied.')
     } else {
       console.error('Error:', error)
     }

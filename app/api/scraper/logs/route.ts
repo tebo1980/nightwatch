@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 
     const logs = await prisma.scraperLog.findMany({
       where,
-      include: { target: { select: { name: true } } },
+      include: { target: { select: { name: true, sourceStore: true, isReference: true } } },
       orderBy: { scrapedAt: 'desc' },
       take: 100,
     })

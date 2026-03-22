@@ -1,46 +1,324 @@
+/* BARATRUST UNIVERSAL SCRAPER ENGINE
+Version 1.0 — March 2026
+
+================================================
+ACTIVE SOURCES
+================================================
+
+PRIMARY SOURCES (included in currentPrice average):
+  Home Depot      homedepot.com         All trades
+  Lowes           lowes.com             All trades
+  Menards         menards.com           GC, Deck, Painter, Handyman, Concrete
+  SupplyHouse     supplyhouse.com       Plumber, HVAC only
+  Sherwin-Williams sherwin-williams.com  Painter only — paint and primer only
+
+REFERENCE SOURCES (stored separately, never in average, never trigger alerts):
+  Amazon          amazon.com            Handyman, small commodity
+  Walmart         walmart.com           Handyman, Painter
+  Target          target.com            Handyman, Painter
+
+================================================
+STORE CSS SELECTORS
+================================================
+  [Noelah fills this in after validating each selector]
+  Home Depot:      .price-format__main-price
+  Lowes:           [data-selector="price"]
+  Menards:          .price-label
+  SupplyHouse:     .price
+  Sherwin-Williams: .price
+  Amazon:          .a-price-whole
+  Walmart:         [data-automation-id="product-price"] span
+  Target:          [data-test="product-price"]
+
+================================================
+KNOWN LIMITATIONS
+================================================
+  - Amazon, Walmart, Target: aggressive bot detection, expect occasional failures
+  - Sherwin-Williams: JavaScript-rendered prices, requires 3 second wait
+  - Most local trade suppliers (Ferguson, ABC Supply, Wiseway, 2J Supply,
+    Habegger, Rexel, Builders FirstSource) use login-based pricing and
+    cannot be scraped. Handle via client intake form instead.
+  - Ready-mix concrete suppliers (Advance Ready Mix, American Ready Mix,
+    imi Concrete) use quote-based pricing. Not scrapeable.
+
+================================================
+PLANNED EXPANSION PATHS
+================================================
+
+GetStackCheck — Competitor Software Pricing:
+  Targets: Jobber, Housecall Pro, ServiceTitan pricing pages
+  Category: Software Pricing
+  Frequency: Monthly
+  Store in: CompetitorPricing table
+  Add via: Scraper admin interface, no code changes needed
+
+BadgerDrive — Stock Scout Phase 2:
+  NOTE: Do NOT use scraper for this. Use Walmart Open API instead.
+  Walmart has an official developer API with real-time store-level
+  inventory data. This is more reliable and more accurate than scraping.
+  Build as a dedicated BadgerDrive integration when development begins.
+  Target stores: Walmart, Target, Dollar General
+  Frequency: On-demand when driver receives shopping order
+
+BaraTrust — Competitive Intelligence:
+  Targets: Local Louisville agency pricing pages
+  Category: Competitor
+  Frequency: Monthly
+  Store in: CompetitorIntel table
+  Add via: Scraper admin interface
+
+Local Supplier Monitoring — Add if public pricing found:
+  Plumbers Supply Co — check for public product pages
+  Wiseway Supply — check for public pricing
+  2J Supply — check for public pricing
+  Habegger Corporation — check for public pricing
+  Builders FirstSource — check for public pricing
+  True Value — reference pricing only, cooperative model
+  Ace Hardware — reference pricing only, cooperative model
+
+Paint Brands to Add When Selectors Validated:
+  Benjamin Moore — benjaminmoore.com
+  PPG Paint — ppgpaints.com
+  Note: Add as reference sources for painter trade
+  Flag in client Bolt config which brand each painter client prefers
+
+Boot and Safety Gear — Future Consideration:
+  Note: Do NOT scrape for Atlas. Handle via Cole expense tracking instead.
+  Contractors log actual boot and PPE purchases in Cole.
+  Cole tracks real spend per client over time.
+  This is more accurate than retail reference pricing.
+
+================================================
+HOW TO ADD A NEW SOURCE
+================================================
+  1. Find the product page on the target site
+  2. Right click the price, click Inspect in Chrome
+  3. Find the price element class name or ID
+  4. Use Test Selector in the Scraper admin to validate
+  5. Add the selector to the STORE CSS SELECTORS section above
+  6. Add targets through the Scraper admin Add Target tab
+  7. No code changes needed for new sources
+  8. For new use cases requiring a new target table:
+     a. Add Prisma model to schema.prisma
+     b. Run prisma migrate dev
+     c. Update the scraper run endpoint to handle the new targetTable value
+*/
+
 import chromium from '@sparticuz/chromium'
 import puppeteer from 'puppeteer-core'
 
-export async function scrapeTarget(url: string, selector: string): Promise<{
+// ─── Store-specific configuration ──────────────────────────────────
+
+interface StoreConfig {
+  waitTime: number
+  timeout: number
+  retryOnFail: boolean
+  retryDelay: number
+  postLoadWait: number // extra wait after page load before selector search
+}
+
+const REFERENCE_STORES = ['Amazon', 'Walmart', 'Target']
+
+function getStoreConfig(sourceStore?: string | null): StoreConfig {
+  // Sherwin-Williams: JS-rendered prices need extra wait
+  if (sourceStore === 'SherwinWilliams') {
+    return {
+      waitTime: 2000,
+      timeout: 35000,
+      retryOnFail: false,
+      retryDelay: 0,
+      postLoadWait: 3000, // 3 second wait for JS price rendering
+    }
+  }
+
+  // Amazon, Walmart, Target: aggressive bot detection
+  if (sourceStore && REFERENCE_STORES.includes(sourceStore)) {
+    return {
+      waitTime: 5000,
+      timeout: 45000,
+      retryOnFail: true,
+      retryDelay: 10000,
+      postLoadWait: 2000,
+    }
+  }
+
+  // Primary stores (HomeDepot, Lowes, Menards, SupplyHouse)
+  return {
+    waitTime: 1000,
+    timeout: 30000,
+    retryOnFail: false,
+    retryDelay: 0,
+    postLoadWait: 0,
+  }
+}
+
+export function isReferenceStore(sourceStore?: string | null): boolean {
+  return !!sourceStore && REFERENCE_STORES.includes(sourceStore)
+}
+
+// ─── Primary source classification ────────────────────────────────
+
+const PRIMARY_STORES = ['HomeDepot', 'Lowes', 'Menards', 'SupplyHouse', 'SherwinWilliams']
+
+export function isPrimaryStore(sourceStore?: string | null): boolean {
+  return !!sourceStore && PRIMARY_STORES.includes(sourceStore)
+}
+
+// Store-specific price field mapping for MaterialPrice table
+export function getStorePriceField(sourceStore: string): string | null {
+  const map: Record<string, string> = {
+    HomeDepot: 'hdPrice',
+    Lowes: 'lowesPrice',
+    Menards: 'menardsPrice',
+    SupplyHouse: 'supplyHousePrice',
+    SherwinWilliams: 'sherwinWilliamsPrice',
+    Amazon: 'amazonPrice',
+    Walmart: 'walmartPrice',
+    Target: 'targetPrice',
+  }
+  return map[sourceStore] || null
+}
+
+// ─── Core scraping function ───────────────────────────────────────
+
+export async function scrapeTarget(
+  url: string,
+  selector: string,
+  sourceStore?: string | null
+): Promise<{
   success: boolean
   result?: string
   error?: string
 }> {
-  let browser = null
-  try {
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: { width: 1280, height: 720 },
-      executablePath: await chromium.executablePath(),
-      headless: true,
-    })
+  const config = getStoreConfig(sourceStore)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let browser: any = null
 
-    const page = await browser.newPage()
+  async function attempt(): Promise<{ success: boolean; result?: string; error?: string }> {
+    try {
+      browser = await puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: { width: 1280, height: 720 },
+        executablePath: await chromium.executablePath(),
+        headless: true,
+      })
 
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+      const page = await browser.newPage()
 
-    await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
-    })
+      // Randomized user agent for reference stores
+      const userAgents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+      ]
+      const ua = sourceStore && REFERENCE_STORES.includes(sourceStore)
+        ? userAgents[Math.floor(Math.random() * userAgents.length)]
+        : userAgents[0]
 
-    await page.waitForSelector(selector, { timeout: 10000 })
+      await page.setUserAgent(ua)
 
-    const result = await page.$eval(selector, (el) => el.textContent?.trim())
+      // Pre-navigation wait for reference stores
+      if (config.waitTime > 0) {
+        await new Promise((r) => setTimeout(r, config.waitTime))
+      }
 
-    return { success: true, result: result || '' }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      await page.goto(url, {
+        waitUntil: 'networkidle2',
+        timeout: config.timeout,
+      })
+
+      // Post-load wait for JS-rendered prices (SW, reference stores)
+      if (config.postLoadWait > 0) {
+        await new Promise((r) => setTimeout(r, config.postLoadWait))
+      }
+
+      await page.waitForSelector(selector, { timeout: 10000 })
+
+      const result = await page.$eval(selector, (el: Element) => el.textContent?.trim())
+
+      return { success: true, result: result || '' }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }
+    } finally {
+      if (browser) {
+        try { await browser.close() } catch { /* ignore */ }
+        browser = null
+      }
     }
-  } finally {
-    if (browser) await browser.close()
   }
+
+  // First attempt
+  const firstResult = await attempt()
+
+  // Retry logic for reference stores
+  if (!firstResult.success && config.retryOnFail) {
+    console.log(`[Scraper] Retrying ${sourceStore} target after ${config.retryDelay}ms...`)
+    await new Promise((r) => setTimeout(r, config.retryDelay))
+    return attempt()
+  }
+
+  return firstResult
 }
+
+// ─── Price parsing utility ─────────────────────────────────────────
 
 export function parsePrice(rawText: string): number | null {
   const cleaned = rawText.replace(/[^0-9.]/g, '')
   const parsed = parseFloat(cleaned)
   return isNaN(parsed) ? null : parsed
+}
+
+// ─── Price looks valid check (for test selector UI) ────────────────
+
+export function looksLikePrice(rawText: string): {
+  isPrice: boolean
+  warning?: string
+} {
+  if (!rawText || rawText.trim().length === 0) {
+    return { isPrice: false, warning: 'Empty result' }
+  }
+  if (rawText.length > 10) {
+    return { isPrice: false, warning: 'Result is longer than 10 characters — may not be a price' }
+  }
+  const price = parsePrice(rawText)
+  if (price === null) {
+    return { isPrice: false, warning: 'Result contains letters or does not look like a number' }
+  }
+  return { isPrice: true }
+}
+
+// ─── Multi-source price recalculation ──────────────────────────────
+
+export function recalculatePrices(material: {
+  hdPrice: number | null
+  lowesPrice: number | null
+  menardsPrice: number | null
+  supplyHousePrice: number | null
+  sherwinWilliamsPrice: number | null
+}): {
+  currentPrice: number | null
+  lowPrice: number | null
+  highPrice: number | null
+} {
+  const primaryPrices = [
+    material.hdPrice,
+    material.lowesPrice,
+    material.menardsPrice,
+    material.supplyHousePrice,
+    material.sherwinWilliamsPrice,
+  ].filter((p): p is number => p !== null && p > 0)
+
+  if (primaryPrices.length === 0) {
+    return { currentPrice: null, lowPrice: null, highPrice: null }
+  }
+
+  const sum = primaryPrices.reduce((a, b) => a + b, 0)
+  return {
+    currentPrice: Math.round((sum / primaryPrices.length) * 100) / 100,
+    lowPrice: Math.min(...primaryPrices),
+    highPrice: Math.max(...primaryPrices),
+  }
 }

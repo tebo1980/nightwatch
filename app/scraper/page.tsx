@@ -8,19 +8,24 @@ interface ScraperTarget {
   targetTable: string; targetField: string; targetRecordId: string
   frequency: string; isActive: boolean; lastScraped: string | null
   lastResult: string | null; lastStatus: string | null
+  sourceStore: string | null; isPrimary: boolean; isReference: boolean
 }
 interface ScraperLogEntry {
   id: string; targetId: string; result: string | null; status: string
-  errorMsg: string | null; scrapedAt: string; target: { name: string }
+  errorMsg: string | null; isReferenceFailure: boolean; scrapedAt: string
+  target: { name: string; sourceStore: string | null; isReference: boolean }
 }
 
 const TABS = ['Targets', 'Run History', 'Add Target'] as const
 const CATEGORIES = ['Materials', 'Software Pricing', 'Competitor', 'Inventory', 'Other']
 const FREQUENCIES = ['daily', 'weekly', 'monthly']
+const SOURCE_STORES = ['HomeDepot', 'Lowes', 'Menards', 'SupplyHouse', 'SherwinWilliams', 'Amazon', 'Walmart', 'Target', 'Other']
+const REFERENCE_STORES = ['Amazon', 'Walmart', 'Target']
 
 const initialForm = {
   name: '', category: CATEGORIES[0], url: '', priceSelector: '',
   targetTable: '', targetField: '', targetRecordId: '', frequency: 'weekly',
+  sourceStore: '', isPrimary: false, isReference: false,
 }
 
 export default function ScraperDashboard() {
@@ -33,16 +38,23 @@ export default function ScraperDashboard() {
   const [submitting, setSubmitting] = useState(false)
   const [runningId, setRunningId] = useState('')
   const [runningAll, setRunningAll] = useState(false)
-  const [runSummary, setRunSummary] = useState<{ succeeded: number; failed: number; total: number } | null>(null)
-  const [testResult, setTestResult] = useState<string | null>(null)
+  const [runSummary, setRunSummary] = useState<{ succeeded: number; failed: number; total: number; refSucceeded?: number; refFailed?: number } | null>(null)
+  const [testResult, setTestResult] = useState<{ status: string; result?: string; warning?: string; error?: string } | null>(null)
   const [testing, setTesting] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [logFilterTarget, setLogFilterTarget] = useState('')
   const [logFilterStatus, setLogFilterStatus] = useState('')
+  const [showRefFailures, setShowRefFailures] = useState(true)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
-  const set = (key: string, val: string) => setForm((f) => ({ ...f, [key]: val }))
+  const set = (key: string, val: string | boolean) => setForm((f) => ({ ...f, [key]: val }))
+
+  // Auto-set isPrimary/isReference when sourceStore changes
+  const setSourceStore = (store: string) => {
+    const isRef = REFERENCE_STORES.includes(store)
+    setForm((f) => ({ ...f, sourceStore: store, isPrimary: !isRef && store !== '', isReference: isRef }))
+  }
 
   const fetchTargets = useCallback(() => {
     fetch('/api/scraper/targets').then((r) => r.json()).then((d) => setTargets(d.targets || [])).catch(() => {})
@@ -119,17 +131,24 @@ export default function ScraperDashboard() {
     if (!form.url || !form.priceSelector) { showToast('Enter URL and selector first'); return }
     setTesting(true); setTestResult(null)
     try {
-      const res = await fetch('/api/scraper/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ testOnly: true, url: form.url, selector: form.priceSelector }) })
+      const res = await fetch('/api/scraper/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: form.url, selector: form.priceSelector, sourceStore: form.sourceStore || null }),
+      })
       const data = await res.json()
-      if (data.success && data.found) setTestResult(`Found: ${data.result}`)
-      else if (data.success) setTestResult('No match found for this selector')
-      else setTestResult(`Error: ${data.error}`)
-    } catch { setTestResult('Test failed') } finally { setTesting(false) }
+      if (data.success && data.found) {
+        setTestResult({ status: data.status, result: data.result, warning: data.warning })
+      } else if (data.success) {
+        setTestResult({ status: 'not_found', error: 'No match found for this selector' })
+      } else {
+        setTestResult({ status: 'error', error: data.error })
+      }
+    } catch { setTestResult({ status: 'error', error: 'Test failed' }) } finally { setTesting(false) }
   }
 
   const inputCls = 'w-full bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-4 py-2.5 text-[#F2EDE4] text-sm focus:outline-none focus:border-[#C17B2A] transition-colors placeholder:text-[#8A8070]/50'
   const labelCls = 'block text-xs text-[#8A8070] mb-1'
-
   const formatDate = (d: string | null) => d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'
 
   const statusBadge = (target: ScraperTarget) => {
@@ -137,6 +156,21 @@ export default function ScraperDashboard() {
     if (target.lastStatus === 'failed') return <span className="text-[10px] bg-red-400/20 text-red-400 px-2 py-0.5 rounded-full">Failed</span>
     return <span className="text-[10px] bg-green-400/20 text-green-400 px-2 py-0.5 rounded-full">Active</span>
   }
+
+  const storeBadge = (target: ScraperTarget) => {
+    if (!target.sourceStore) return null
+    const isRef = target.isReference
+    return (
+      <span className={`text-[10px] px-2 py-0.5 rounded ${isRef ? 'bg-[#C17B2A]/20 text-[#C17B2A]' : 'bg-blue-400/20 text-blue-400'}`}>
+        {target.sourceStore}{isRef ? ' (Ref)' : ''}
+      </span>
+    )
+  }
+
+  // Filter logs based on reference toggle
+  const filteredLogs = showRefFailures
+    ? logs
+    : logs.filter((l) => !l.isReferenceFailure || l.status === 'success')
 
   if (loading) return <div className="min-h-screen bg-[#0E0C0A] flex items-center justify-center text-[#8A8070]">Loading...</div>
 
@@ -147,8 +181,8 @@ export default function ScraperDashboard() {
 
         <div className="mb-8">
           <Link href="/" className="text-xs text-[#8A8070] hover:text-[#C17B2A] transition-colors">&larr; Dashboard</Link>
-          <h1 className="text-2xl font-semibold text-[#C17B2A] mt-1">Scraper Engine</h1>
-          <p className="text-sm text-[#8A8070]">Universal price & data scraper</p>
+          <h1 className="text-2xl font-semibold text-[#C17B2A] mt-1">🕷️ Scraper Engine</h1>
+          <p className="text-sm text-[#8A8070]">Universal price & data scraper — multi-source</p>
         </div>
 
         {/* Tabs */}
@@ -168,9 +202,11 @@ export default function ScraperDashboard() {
               </button>
             </div>
             {runSummary && (
-              <div className="bg-[#1E1B16] border border-[rgba(193,123,42,0.15)] rounded-xl p-4 flex gap-6">
-                <p className="text-sm text-green-400">{runSummary.succeeded} succeeded</p>
-                {runSummary.failed > 0 && <p className="text-sm text-red-400">{runSummary.failed} failed</p>}
+              <div className="bg-[#1E1B16] border border-[rgba(193,123,42,0.15)] rounded-xl p-4 flex flex-wrap gap-6">
+                <p className="text-sm text-green-400">{runSummary.succeeded} primary succeeded</p>
+                {runSummary.failed > 0 && <p className="text-sm text-red-400">{runSummary.failed} primary failed</p>}
+                {runSummary.refSucceeded !== undefined && <p className="text-sm text-[#C17B2A]">{runSummary.refSucceeded} reference succeeded</p>}
+                {(runSummary.refFailed || 0) > 0 && <p className="text-sm text-[#C17B2A]/60">{runSummary.refFailed} reference failed</p>}
                 <p className="text-sm text-[#8A8070]">{runSummary.total} total</p>
               </div>
             )}
@@ -180,9 +216,10 @@ export default function ScraperDashboard() {
               <div key={t.id} className="bg-[#1E1B16] border border-[rgba(193,123,42,0.15)] rounded-xl p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <p className="text-sm font-medium text-[#F2EDE4]">{t.name}</p>
                       {statusBadge(t)}
+                      {storeBadge(t)}
                       <span className="text-[10px] text-[#8A8070] bg-[#0E0C0A] px-2 py-0.5 rounded">{t.category}</span>
                     </div>
                     <p className="text-xs text-[#8A8070] truncate max-w-[40ch]" title={t.url}>{t.url}</p>
@@ -191,9 +228,6 @@ export default function ScraperDashboard() {
                       <span>Last: {formatDate(t.lastScraped)}</span>
                       {t.lastResult && <span className="text-[#F2EDE4]">Result: {t.lastResult}</span>}
                     </div>
-                    <p className="text-[10px] text-[#8A8070] mt-0.5">
-                      {t.targetTable}.{t.targetField} &rarr; {t.targetRecordId}
-                    </p>
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
                     <button onClick={() => runTarget(t.id)} disabled={runningId === t.id} className="text-xs text-[#C17B2A] hover:text-[#D4892F] disabled:opacity-40 whitespace-nowrap">
@@ -224,7 +258,7 @@ export default function ScraperDashboard() {
         {/* ═══ Run History Tab ═══ */}
         {tab === 'Run History' && (
           <div className="space-y-4">
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               <select className={`${inputCls} w-48`} value={logFilterTarget} onChange={(e) => setLogFilterTarget(e.target.value)}>
                 <option value="">All Targets</option>
                 {targets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -234,13 +268,25 @@ export default function ScraperDashboard() {
                 <option value="success">Success</option>
                 <option value="failed">Failed</option>
               </select>
+              <label className="flex items-center gap-2 text-sm text-[#8A8070] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showRefFailures}
+                  onChange={(e) => setShowRefFailures(e.target.checked)}
+                  className="accent-[#C17B2A]"
+                />
+                Show reference store failures
+              </label>
             </div>
-            {logs.length === 0 ? (
+            {filteredLogs.length === 0 ? (
               <p className="text-sm text-[#8A8070] text-center py-8">No scrape logs yet.</p>
-            ) : logs.map((l) => (
+            ) : filteredLogs.map((l) => (
               <div key={l.id} className="bg-[#1E1B16] border border-[rgba(193,123,42,0.15)] rounded-xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-[#F2EDE4]">{l.target.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-[#F2EDE4]">{l.target.name}</p>
+                    {l.isReferenceFailure && <span className="text-[10px] text-[#C17B2A] bg-[#C17B2A]/20 px-2 py-0.5 rounded">Ref</span>}
+                  </div>
                   <p className="text-xs text-[#8A8070]">{formatDate(l.scrapedAt)}</p>
                   {l.result && <p className="text-xs text-[#F2EDE4] mt-0.5">Result: {l.result}</p>}
                   {l.errorMsg && <p className="text-xs text-red-400 mt-0.5">{l.errorMsg}</p>}
@@ -267,6 +313,13 @@ export default function ScraperDashboard() {
               </div>
             </div>
             <div>
+              <label className={labelCls}>Source Store</label>
+              <select className={inputCls} value={form.sourceStore} onChange={(e) => setSourceStore(e.target.value)}>
+                <option value="">— Select Store —</option>
+                {SOURCE_STORES.map((s) => <option key={s} value={s}>{s}{REFERENCE_STORES.includes(s) ? ' (Reference)' : ' (Primary)'}</option>)}
+              </select>
+            </div>
+            <div>
               <label className={labelCls}>URL *</label>
               <input className={inputCls} placeholder="https://example.com/product" value={form.url} onChange={(e) => set('url', e.target.value)} />
             </div>
@@ -279,19 +332,35 @@ export default function ScraperDashboard() {
                 {testing ? 'Testing...' : 'Test Selector'}
               </button>
             </div>
+            {/* Test Result with color-coded states */}
             {testResult && (
-              <div className={`text-sm px-4 py-2 rounded-lg ${testResult.startsWith('Found') ? 'bg-green-400/10 text-green-400' : 'bg-red-400/10 text-red-400'}`}>
-                {testResult}
+              <div>
+                <div className={`text-sm px-4 py-3 rounded-lg flex items-center gap-2 ${
+                  testResult.status === 'found' ? 'bg-green-400/10 text-green-400 border border-green-400/20' :
+                  testResult.status === 'warning' ? 'bg-yellow-400/10 text-yellow-400 border border-yellow-400/20' :
+                  'bg-red-400/10 text-red-400 border border-red-400/20'
+                }`}>
+                  <span className="text-lg">{testResult.status === 'found' ? '✓' : testResult.status === 'warning' ? '⚠' : '✗'}</span>
+                  <div>
+                    {testResult.result && <p>Found: {testResult.result}</p>}
+                    {testResult.warning && <p>{testResult.warning}</p>}
+                    {testResult.error && <p>{testResult.error}</p>}
+                  </div>
+                </div>
+                <p className="text-[10px] text-[#8A8070]/60 mt-2">
+                  If the price looks correct this selector will work for all similar product pages on this site.
+                  If it failed try right-clicking the price element again and looking for a more specific class name.
+                </p>
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className={labelCls}>Target Table *</label>
-                <input className={inputCls} placeholder="e.g. ColeInventoryItem" value={form.targetTable} onChange={(e) => set('targetTable', e.target.value)} />
+                <input className={inputCls} placeholder="e.g. MaterialPrice" value={form.targetTable} onChange={(e) => set('targetTable', e.target.value)} />
               </div>
               <div>
                 <label className={labelCls}>Target Field *</label>
-                <input className={inputCls} placeholder="e.g. price" value={form.targetField} onChange={(e) => set('targetField', e.target.value)} />
+                <input className={inputCls} placeholder="e.g. currentPrice" value={form.targetField} onChange={(e) => set('targetField', e.target.value)} />
               </div>
               <div>
                 <label className={labelCls}>Target Record ID *</label>
@@ -327,7 +396,7 @@ function EditTargetInline({ target, onSave, onCancel, inputCls, labelCls }: {
     name: target.name, category: target.category, url: target.url,
     priceSelector: target.priceSelector, targetTable: target.targetTable,
     targetField: target.targetField, targetRecordId: target.targetRecordId,
-    frequency: target.frequency,
+    frequency: target.frequency, sourceStore: target.sourceStore || '',
   })
 
   return (
@@ -335,8 +404,9 @@ function EditTargetInline({ target, onSave, onCancel, inputCls, labelCls }: {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div><label className={labelCls}>Name</label><input className={inputCls} value={ef.name} onChange={(e) => setEf({ ...ef, name: e.target.value })} /></div>
         <div><label className={labelCls}>Category</label><select className={inputCls} value={ef.category} onChange={(e) => setEf({ ...ef, category: e.target.value })}>{CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
-        <div className="md:col-span-2"><label className={labelCls}>URL</label><input className={inputCls} value={ef.url} onChange={(e) => setEf({ ...ef, url: e.target.value })} /></div>
+        <div><label className={labelCls}>Source Store</label><select className={inputCls} value={ef.sourceStore} onChange={(e) => setEf({ ...ef, sourceStore: e.target.value })}><option value="">—</option>{SOURCE_STORES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
         <div><label className={labelCls}>Selector</label><input className={inputCls} value={ef.priceSelector} onChange={(e) => setEf({ ...ef, priceSelector: e.target.value })} /></div>
+        <div className="md:col-span-2"><label className={labelCls}>URL</label><input className={inputCls} value={ef.url} onChange={(e) => setEf({ ...ef, url: e.target.value })} /></div>
         <div><label className={labelCls}>Frequency</label><select className={inputCls} value={ef.frequency} onChange={(e) => setEf({ ...ef, frequency: e.target.value })}>{FREQUENCIES.map((f) => <option key={f} value={f}>{f}</option>)}</select></div>
         <div><label className={labelCls}>Target Table</label><input className={inputCls} value={ef.targetTable} onChange={(e) => setEf({ ...ef, targetTable: e.target.value })} /></div>
         <div><label className={labelCls}>Target Field</label><input className={inputCls} value={ef.targetField} onChange={(e) => setEf({ ...ef, targetField: e.target.value })} /></div>

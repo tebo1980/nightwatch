@@ -407,19 +407,64 @@ model ScraperTarget {
   lastScraped    DateTime?
   lastResult     String?
   lastStatus     String?
+  sourceStore    String?       // HomeDepot, Lowes, Menards, SupplyHouse, SherwinWilliams, Amazon, Walmart, Target, Other
+  isPrimary      Boolean       @default(false)
+  isReference    Boolean       @default(false)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   logs           ScraperLog[]
 }
 
 model ScraperLog {
-  id         String        @id @default(cuid())
-  targetId   String
-  target     ScraperTarget @relation(fields: [targetId], references: [id])
-  result     String?
-  status     String
-  errorMsg   String?
-  scrapedAt  DateTime      @default(now())
+  id                   String        @id @default(cuid())
+  targetId             String
+  target               ScraperTarget @relation(fields: [targetId], references: [id])
+  result               String?
+  status               String
+  errorMsg             String?
+  isReferenceFailure   Boolean       @default(false)
+  scrapedAt            DateTime      @default(now())
+}
+
+// ─── Atlas: Material Pricing ─────────────────────────────────────
+
+model MaterialPrice {
+  id                    String    @id @default(cuid())
+  name                  String
+  trade                 String    // Plumber, HVAC, Electrician, GC, etc.
+  unit                  String    // each, linear foot, gallon, etc.
+  currentPrice          Float?
+  previousPrice         Float?
+  percentChange         Float?
+  lowPrice              Float?
+  highPrice             Float?
+  sourceUrl             String?
+  hdPrice               Float?
+  lowesPrice            Float?
+  menardsPrice          Float?
+  supplyHousePrice      Float?
+  sherwinWilliamsPrice  Float?
+  amazonPrice           Float?
+  walmartPrice          Float?
+  targetPrice           Float?
+  primarySource         String?
+  category              String?
+  notes                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  alerts                PriceAlert[]
+}
+
+model PriceAlert {
+  id            String        @id @default(cuid())
+  materialId    String
+  material      MaterialPrice @relation(fields: [materialId], references: [id])
+  sourceStore   String?
+  previousPrice Float
+  newPrice      Float
+  percentChange Float
+  acknowledged  Boolean       @default(false)
+  createdAt     DateTime      @default(now())
 }
 
 // ─── Sage: Social Media Posts ─────────────────────────────────────

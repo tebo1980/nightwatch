@@ -94,23 +94,24 @@ export default function Dashboard() {
         {/* Agent Dashboard Links */}
         <div className="flex flex-wrap gap-2 mb-8">
           {[
-            { name: 'Rex', href: '/rex' },
-            { name: 'Iris', href: '/iris' },
-            { name: 'Max', href: '/max' },
-            { name: 'Della', href: '/della' },
-            { name: 'Sage', href: '/sage' },
-            { name: 'Flynn', href: '/flynn' },
-            { name: 'Cole', href: '/cole' },
-            { name: 'River', href: '/river' },
-            { name: 'Report Generator', href: '/report-generator' },
-            { name: 'Scraper', href: '/scraper' },
+            { name: 'Rex', href: '/rex', emoji: '🦖' },
+            { name: 'Iris', href: '/iris', emoji: '🌺' },
+            { name: 'Max', href: '/max', emoji: '💪' },
+            { name: 'Della', href: '/della', emoji: '✉️' },
+            { name: 'Sage', href: '/sage', emoji: '🌿' },
+            { name: 'Flynn', href: '/flynn', emoji: '🚗' },
+            { name: 'Cole', href: '/cole', emoji: '📊' },
+            { name: 'River', href: '/river', emoji: '🌊' },
+            { name: 'Atlas', href: '/atlas', emoji: '🗺️' },
+            { name: 'Scraper', href: '/scraper', emoji: '🕷️' },
+            { name: 'Report Generator', href: '/report-generator', emoji: '📝' },
           ].map((link) => (
             <Link
               key={link.name}
               href={link.href}
               className="border border-[rgba(193,123,42,0.3)] text-[#C17B2A] px-4 py-2 rounded-lg text-sm hover:bg-[rgba(193,123,42,0.1)] transition-colors"
             >
-              {link.name} Dashboard
+              {link.emoji} {link.name}
             </Link>
           ))}
         </div>
