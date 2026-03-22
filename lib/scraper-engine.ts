@@ -1,5 +1,5 @@
 /* BARATRUST UNIVERSAL SCRAPER ENGINE
-Version 1.0 — March 2026
+Version 1.1 — March 2026
 
 ================================================
 ACTIVE SOURCES
@@ -18,23 +18,36 @@ REFERENCE SOURCES (stored separately, never in average, never trigger alerts):
   Target          target.com            Handyman, Painter
 
 ================================================
-STORE CSS SELECTORS
+STORE CSS SELECTORS (confirmed working)
 ================================================
-  [Noelah fills this in after validating each selector]
-  Home Depot:      .price-format__main-price
-  Lowes:           [data-selector="price"]
-  Menards:          .price-label
-  SupplyHouse:     .price
-  Sherwin-Williams: .price
-  Amazon:          .a-price-whole
-  Walmart:         [data-automation-id="product-price"] span
-  Target:          [data-test="product-price"]
+
+  Puppeteer (direct browser):
+    SupplyHouse:      [class*="ProductPriceTextAmount"]
+    Amazon:           .a-price-whole
+    Target:           [data-test="product-price"]
+
+  ScrapingBee (proxy bypass required):
+    Home Depot:       [data-component*="price:Price"]
+    Lowes:            .item-price-dollar
+    Walmart:          [data-testid="price-wrap"]
+    Sherwin-Williams: find selector after bypass confirmed
+
+  Menards (Puppeteer — page loads, lazy price rendering):
+    Try in sequence:  .price-big-val, [class*="price"], .price
+    Requires:         3000ms wait after page load
+
+================================================
+SCRAPING METHODS
+================================================
+  ScrapingBee API:  HomeDepot, Lowes, Walmart, SherwinWilliams
+  Puppeteer:        Amazon, Target, SupplyHouse, Menards, all others
 
 ================================================
 KNOWN LIMITATIONS
 ================================================
-  - Amazon, Walmart, Target: aggressive bot detection, expect occasional failures
-  - Sherwin-Williams: JavaScript-rendered prices, requires 3 second wait
+  - Amazon, Target: aggressive bot detection, expect occasional failures
+  - Sherwin-Williams: JavaScript-rendered prices, ScrapingBee with render_js
+  - Menards: lazy-loaded prices, requires 3s wait + fallback selectors
   - Most local trade suppliers (Ferguson, ABC Supply, Wiseway, 2J Supply,
     Habegger, Rexel, Builders FirstSource) use login-based pricing and
     cannot be scraped. Handle via client intake form instead.
@@ -107,32 +120,39 @@ HOW TO ADD A NEW SOURCE
 import chromium from '@sparticuz/chromium'
 import puppeteer from 'puppeteer-core'
 
-// ─── Store-specific configuration ──────────────────────────────────
+// ─── Store routing ────────────────────────────────────────────────
+// These stores are routed through ScrapingBee API instead of Puppeteer
+const SCRAPINGBEE_STORES = ['HomeDepot', 'Lowes', 'Walmart', 'SherwinWilliams']
+
+// Menards fallback selectors — try in sequence until one works
+const MENARDS_SELECTORS = ['.price-big-val', '[class*="price"]', '.price']
+
+// ─── Store-specific configuration (for Puppeteer stores) ──────────
 
 interface StoreConfig {
   waitTime: number
   timeout: number
   retryOnFail: boolean
   retryDelay: number
-  postLoadWait: number // extra wait after page load before selector search
+  postLoadWait: number
 }
 
 const REFERENCE_STORES = ['Amazon', 'Walmart', 'Target']
 
 function getStoreConfig(sourceStore?: string | null): StoreConfig {
-  // Sherwin-Williams: JS-rendered prices need extra wait
-  if (sourceStore === 'SherwinWilliams') {
+  // Menards: lazy-loaded prices need 3s wait
+  if (sourceStore === 'Menards') {
     return {
-      waitTime: 2000,
-      timeout: 35000,
+      waitTime: 1000,
+      timeout: 30000,
       retryOnFail: false,
       retryDelay: 0,
-      postLoadWait: 3000, // 3 second wait for JS price rendering
+      postLoadWait: 3000,
     }
   }
 
-  // Amazon, Walmart, Target: aggressive bot detection
-  if (sourceStore && REFERENCE_STORES.includes(sourceStore)) {
+  // Amazon, Target: aggressive bot detection (Walmart now uses ScrapingBee)
+  if (sourceStore && ['Amazon', 'Target'].includes(sourceStore)) {
     return {
       waitTime: 5000,
       timeout: 45000,
@@ -142,7 +162,7 @@ function getStoreConfig(sourceStore?: string | null): StoreConfig {
     }
   }
 
-  // Primary stores (HomeDepot, Lowes, Menards, SupplyHouse)
+  // SupplyHouse and all other Puppeteer stores
   return {
     waitTime: 1000,
     timeout: 30000,
@@ -179,17 +199,67 @@ export function getStorePriceField(sourceStore: string): string | null {
   return map[sourceStore] || null
 }
 
-// ─── Core scraping function ───────────────────────────────────────
+// ─── ScrapingBee API scraper ──────────────────────────────────────
 
-export async function scrapeTarget(
-  url: string,
-  selector: string,
-  sourceStore?: string | null
-): Promise<{
+async function scrapeWithScrapingBee(url: string, selector: string): Promise<{
   success: boolean
   result?: string
   error?: string
 }> {
+  try {
+    const apiKey = process.env.SCRAPINGBEE_API_KEY
+    if (!apiKey) {
+      return { success: false, error: 'ScrapingBee API key not configured' }
+    }
+
+    const params = new URLSearchParams({
+      api_key: apiKey,
+      url: url,
+      css_selector: selector,
+      render_js: 'true',
+      wait: '3000',
+      premium_proxy: 'true',
+    })
+
+    const response = await fetch(
+      `https://app.scrapingbee.com/api/v1/?${params.toString()}`,
+      {
+        method: 'GET',
+        signal: AbortSignal.timeout(60000),
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      return {
+        success: false,
+        error: `ScrapingBee error ${response.status}: ${errorText.slice(0, 200)}`,
+      }
+    }
+
+    const text = await response.text()
+    const cleaned = text.trim()
+
+    if (!cleaned || cleaned.length === 0) {
+      return { success: false, error: 'ScrapingBee returned empty response' }
+    }
+
+    return { success: true, result: cleaned }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'ScrapingBee unknown error',
+    }
+  }
+}
+
+// ─── Puppeteer scraper ────────────────────────────────────────────
+
+async function scrapeWithPuppeteer(
+  url: string,
+  selector: string,
+  sourceStore?: string | null
+): Promise<{ success: boolean; result?: string; error?: string }> {
   const config = getStoreConfig(sourceStore)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let browser: any = null
@@ -205,19 +275,17 @@ export async function scrapeTarget(
 
       const page = await browser.newPage()
 
-      // Randomized user agent for reference stores
       const userAgents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
       ]
-      const ua = sourceStore && REFERENCE_STORES.includes(sourceStore)
+      const ua = sourceStore && ['Amazon', 'Target'].includes(sourceStore)
         ? userAgents[Math.floor(Math.random() * userAgents.length)]
         : userAgents[0]
 
       await page.setUserAgent(ua)
 
-      // Pre-navigation wait for reference stores
       if (config.waitTime > 0) {
         await new Promise((r) => setTimeout(r, config.waitTime))
       }
@@ -227,13 +295,30 @@ export async function scrapeTarget(
         timeout: config.timeout,
       })
 
-      // Post-load wait for JS-rendered prices (SW, reference stores)
+      // Post-load wait (Menards 3s for lazy prices, reference stores 2s)
       if (config.postLoadWait > 0) {
         await new Promise((r) => setTimeout(r, config.postLoadWait))
       }
 
-      await page.waitForSelector(selector, { timeout: 10000 })
+      // Menards: try multiple selectors in sequence
+      if (sourceStore === 'Menards') {
+        const selectorsToTry = [selector, ...MENARDS_SELECTORS.filter((s) => s !== selector)]
+        for (const sel of selectorsToTry) {
+          try {
+            await page.waitForSelector(sel, { timeout: 3000 })
+            const result = await page.$eval(sel, (el: Element) => el.textContent?.trim())
+            if (result && parsePrice(result) !== null) {
+              return { success: true, result }
+            }
+          } catch {
+            // Try next selector
+          }
+        }
+        return { success: false, error: 'Menards: none of the fallback selectors found a valid price' }
+      }
 
+      // Standard single selector
+      await page.waitForSelector(selector, { timeout: 10000 })
       const result = await page.$eval(selector, (el: Element) => el.textContent?.trim())
 
       return { success: true, result: result || '' }
@@ -263,11 +348,45 @@ export async function scrapeTarget(
   return firstResult
 }
 
+// ─── Main scraping function (routes to ScrapingBee or Puppeteer) ──
+
+export async function scrapeTarget(
+  url: string,
+  selector: string,
+  sourceStore?: string | null
+): Promise<{
+  success: boolean
+  result?: string
+  error?: string
+}> {
+  // Route ScrapingBee stores through the API
+  if (sourceStore && SCRAPINGBEE_STORES.includes(sourceStore)) {
+    console.log(`[Scraper] Using ScrapingBee for ${sourceStore}: ${url.slice(0, 60)}...`)
+    return scrapeWithScrapingBee(url, selector)
+  }
+
+  // Everything else goes through Puppeteer
+  console.log(`[Scraper] Using Puppeteer for ${sourceStore || 'unknown'}: ${url.slice(0, 60)}...`)
+  return scrapeWithPuppeteer(url, selector, sourceStore)
+}
+
 // ─── Price parsing utility ─────────────────────────────────────────
+// Handles: $3.09, 3.09, $3.09/each, 3.09/ft, $1,234.56, 1234.56
 
 export function parsePrice(rawText: string): number | null {
-  const cleaned = rawText.replace(/[^0-9.]/g, '')
-  const parsed = parseFloat(cleaned)
+  if (!rawText) return null
+  // Strip everything before and including the last $ (handles "$3.09" and "Was $5.00 Now $3.09")
+  let text = rawText
+  const lastDollar = text.lastIndexOf('$')
+  if (lastDollar !== -1) {
+    text = text.slice(lastDollar + 1)
+  }
+  // Remove commas (for 1,234.56)
+  text = text.replace(/,/g, '')
+  // Stop at first non-numeric/non-dot character after the number starts (handles /each, /ft, etc.)
+  const match = text.match(/(\d+\.?\d*)/)
+  if (!match) return null
+  const parsed = parseFloat(match[1])
   return isNaN(parsed) ? null : parsed
 }
 
@@ -280,8 +399,8 @@ export function looksLikePrice(rawText: string): {
   if (!rawText || rawText.trim().length === 0) {
     return { isPrice: false, warning: 'Empty result' }
   }
-  if (rawText.length > 10) {
-    return { isPrice: false, warning: 'Result is longer than 10 characters — may not be a price' }
+  if (rawText.length > 30) {
+    return { isPrice: false, warning: 'Result is longer than 30 characters — may not be a price element' }
   }
   const price = parsePrice(rawText)
   if (price === null) {
