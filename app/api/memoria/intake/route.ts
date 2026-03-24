@@ -4,7 +4,11 @@ import { recordInsight } from '@/lib/memoria'
 import Anthropic from '@anthropic-ai/sdk'
 import type { Prisma } from '@prisma/client'
 
-const anthropic = new Anthropic()
+let _anthropic: Anthropic | null = null
+function getAnthropic() {
+  if (!_anthropic) _anthropic = new Anthropic()
+  return _anthropic
+}
 
 const SYSTEM_PROMPT = `You are a business intelligence analyst specializing in small trade and service businesses. You are analyzing raw business data submitted by a contractor or service business owner. Your job is to extract meaningful business insights from whatever data is provided — even if it is messy, incomplete, or in an unusual format.
 
@@ -62,7 +66,7 @@ ${typeof rawData === 'string' ? rawData : JSON.stringify(rawData, null, 2)}
 Extract all meaningful insights. Focus on patterns, anomalies, profitability signals, customer behavior, seasonal trends, and strategic opportunities or risks.`
 
     // Call Claude
-    const message = await anthropic.messages.create({
+    const message = await getAnthropic().messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
       system: SYSTEM_PROMPT,

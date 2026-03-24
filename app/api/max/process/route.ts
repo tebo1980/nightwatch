@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getMaxReviewRequestPrompt, getMaxPaymentReminderPrompt } from '@/lib/max-prompts'
+import { recordInsight } from '@/lib/memoria'
 import Anthropic from '@anthropic-ai/sdk'
 import { Resend } from 'resend'
 
@@ -133,6 +134,53 @@ ${invoice.description ? `For: ${invoice.description}` : ''}`
         } catch (e) {
           console.error('Payment reminder error:', e)
         }
+      }
+
+      // ─── Memoria: Max collections & payment insights ──────────────
+      try {
+        // Track average days to payment
+        const paidInvoices = await prisma.maxInvoice.findMany({
+          where: { clientId: client.id, status: 'paid', paidAt: { not: null } },
+        })
+
+        if (paidInvoices.length >= 3) {
+          const avgDays = paidInvoices.reduce((sum, inv) => {
+            const days = Math.floor((inv.paidAt!.getTime() - inv.dueDate.getTime()) / 86400000)
+            return sum + Math.max(0, days)
+          }, 0) / paidInvoices.length
+
+          if (avgDays > 30) {
+            await recordInsight({
+              clientId: client.id,
+              category: 'revenue',
+              insight: `Average payment arrives ${Math.round(avgDays)} days past due date. This cash flow delay costs the business working capital. Consider requiring deposits or offering early payment discounts.`,
+              confidence: 'high',
+              source: 'Max',
+              tradeVertical: client.industry,
+            })
+          }
+        }
+
+        // Track repeat late payers
+        const lateCustomers: Record<string, number> = {}
+        for (const inv of overdueInvoices) {
+          const name = inv.customerName
+          lateCustomers[name] = (lateCustomers[name] || 0) + 1
+        }
+        for (const [name, count] of Object.entries(lateCustomers)) {
+          if (count >= 2) {
+            await recordInsight({
+              clientId: client.id,
+              category: 'customer',
+              insight: `${name} has ${count} overdue invoices. This repeat late payer may need prepayment terms or should be flagged for collection priority.`,
+              confidence: 'medium',
+              source: 'Max',
+              tradeVertical: client.industry,
+            })
+          }
+        }
+      } catch (memoriaErr) {
+        console.error('Max Memoria insight error:', memoriaErr)
       }
     }
 

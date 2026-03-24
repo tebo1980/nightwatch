@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { recordInsight } from '@/lib/memoria'
 import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic()
@@ -74,6 +75,45 @@ Keep the report under 300 words. Sound like a trusted advisor, not an accountant
     })
 
     const report = message.content[0].type === 'text' ? message.content[0].text : ''
+
+    // ─── Memoria: Flynn fleet insights ────────────────────────────
+    try {
+      for (const v of vehicleData) {
+        // Cost per mile check (estimate based on fuel + maint vs rough mileage)
+        // If total monthly cost is high relative to typical service vehicle usage
+        if (v.gallons > 0) {
+          const estimatedMiles = v.gallons * 20 // ~20 mpg estimate for service vehicles
+          const costPerMile = estimatedMiles > 0 ? v.total / estimatedMiles : 0
+          if (costPerMile > 0.65) {
+            await recordInsight({
+              clientId,
+              category: 'operations',
+              insight: `Vehicle ${v.name} (${v.year} ${v.make} ${v.model}) is running at approximately $${costPerMile.toFixed(2)}/mile — above the $0.65 efficiency threshold. Review maintenance schedule and fuel efficiency.`,
+              confidence: 'medium',
+              source: 'Flynn',
+              tradeVertical: client.industry,
+            })
+          }
+        }
+
+        // Overdue maintenance
+        if (v.overdue.length > 0) {
+          for (const o of v.overdue) {
+            await recordInsight({
+              clientId,
+              category: 'operations',
+              insight: `Vehicle ${v.name} is overdue for ${o.type} service — current mileage ${o.currentMileage.toLocaleString()} exceeds due mileage of ${o.dueMileage?.toLocaleString()}. Deferred maintenance increases breakdown risk and repair costs.`,
+              confidence: 'high',
+              source: 'Flynn',
+              tradeVertical: client.industry,
+            })
+          }
+        }
+      }
+    } catch (memoriaErr) {
+      console.error('Flynn Memoria insight error:', memoriaErr)
+    }
+
     return NextResponse.json({ success: true, report, vehicleData })
   } catch (error) {
     console.error('Flynn report error:', error)

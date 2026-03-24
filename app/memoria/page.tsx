@@ -164,8 +164,11 @@ function IntelligenceTab({ clients }: { clients: AgentClientOption[] }) {
   const [selectedClient, setSelectedClient] = useState('')
   const [insights, setInsights] = useState<Insight[]>([])
   const [loading, setLoading] = useState(false)
-  const [reportSummary, setReportSummary] = useState('')
+  const [brief, setBrief] = useState('')
   const [reportLoading, setReportLoading] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [sendingToDella, setSendingToDella] = useState(false)
+  const [dellaSent, setDellaSent] = useState(false)
 
   const loadInsights = useCallback(() => {
     if (!selectedClient) { setInsights([]); return }
@@ -178,13 +181,16 @@ function IntelligenceTab({ clients }: { clients: AgentClientOption[] }) {
   }, [selectedClient])
 
   useEffect(() => {
-    setReportSummary('')
+    setBrief('')
+    setDellaSent(false)
     loadInsights()
   }, [loadInsights])
 
   const generateReport = async () => {
     if (!selectedClient) return
     setReportLoading(true)
+    setBrief('')
+    setDellaSent(false)
     try {
       const res = await fetch('/api/memoria/report', {
         method: 'POST',
@@ -192,12 +198,39 @@ function IntelligenceTab({ clients }: { clients: AgentClientOption[] }) {
         body: JSON.stringify({ clientId: selectedClient }),
       })
       const data = await res.json()
-      setReportSummary(data.summary || 'No data available.')
+      setBrief(data.brief || data.summary || 'No data available.')
     } catch {
-      setReportSummary('Failed to generate report.')
+      setBrief('Failed to generate report.')
     } finally {
       setReportLoading(false)
     }
+  }
+
+  const copyBrief = () => {
+    navigator.clipboard.writeText(brief).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const sendToClient = async () => {
+    const client = clients.find((c) => c.id === selectedClient)
+    if (!client || !brief) return
+    setSendingToDella(true)
+    try {
+      await fetch('/api/della/draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: selectedClient,
+          emailType: 'intelligence-brief',
+          recipientName: client.ownerName,
+          requestNotes: `Send the following Memoria Intelligence Brief to the client:\n\n${brief}`,
+        }),
+      })
+      setDellaSent(true)
+    } catch { /* ignore */ }
+    setSendingToDella(false)
   }
 
   const markInactive = async (insightId: string) => {
@@ -261,11 +294,25 @@ function IntelligenceTab({ clients }: { clients: AgentClientOption[] }) {
         </div>
       )}
 
-      {/* Report */}
-      {reportSummary && (
+      {/* Intelligence Brief */}
+      {brief && (
         <div className={cardClass + ' border-[rgba(193,123,42,0.3)] p-6 mb-6'}>
-          <h2 className="text-sm font-medium text-[#C17B2A] mb-3">Intelligence Report</h2>
-          <pre className="text-xs text-[#F2EDE4] whitespace-pre-wrap font-mono leading-relaxed">{reportSummary}</pre>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-medium text-[#C17B2A]">🧠 Memoria Intelligence Brief</h2>
+            <div className="flex gap-2">
+              <button onClick={copyBrief} className={btnSecondary + ' !text-xs !px-3 !py-1.5'}>
+                {copied ? '✓ Copied' : '📋 Copy'}
+              </button>
+              <button
+                onClick={sendToClient}
+                disabled={sendingToDella || dellaSent}
+                className={btnPrimary + ' !text-xs !px-3 !py-1.5'}
+              >
+                {dellaSent ? '✓ Sent to Della' : sendingToDella ? 'Sending...' : '✉️ Send to Client'}
+              </button>
+            </div>
+          </div>
+          <div className="text-sm text-[#F2EDE4] whitespace-pre-wrap leading-relaxed">{brief}</div>
         </div>
       )}
 

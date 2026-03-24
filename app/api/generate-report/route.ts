@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { getClientIntelligence } from '@/lib/memoria'
 import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic()
@@ -42,6 +44,32 @@ Write in four sections:
 4) Guarantee Status (honest, specific)
 
 Close with the Health Score update and one warm personal sentence signed Todd. Under 450 words total.`
+
+    // ─── Memoria: Add intelligence section if available ────────────
+    try {
+      const agentClient = await prisma.agentClient.findFirst({
+        where: { businessName: { contains: clientName.split(' ')[0] } },
+      })
+
+      if (agentClient) {
+        const insights = await getClientIntelligence(agentClient.id)
+        if (insights.length > 0) {
+          const topInsights = insights
+            .filter((i) => i.confidence !== 'low')
+            .slice(0, 3)
+
+          if (topInsights.length > 0) {
+            userPrompt += `\n\nAfter the main report, add a section called "Memoria Intelligence" with these top business insights we have gathered about this client:\n`
+            for (const ins of topInsights) {
+              userPrompt += `- [${ins.confidence.toUpperCase()}] ${ins.insight}\n`
+            }
+            userPrompt += `\nSummarize these insights in 2-3 plain English sentences that connect them to the report findings. Make them actionable.`
+          }
+        }
+      }
+    } catch {
+      // Memoria data is optional — continue without it
+    }
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',

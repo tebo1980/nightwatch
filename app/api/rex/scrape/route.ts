@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { scrapeGoogleReviews, scrapeYelpReviews } from '@/lib/rex-scraper'
 import { getRexSystemPrompt } from '@/lib/rex-prompts'
+import { recordInsight } from '@/lib/memoria'
 import Anthropic from '@anthropic-ai/sdk'
 import { Resend } from 'resend'
 
@@ -66,6 +67,49 @@ async function handleScrape() {
           })
         } catch (emailErr) {
           console.error('Email alert error:', emailErr)
+        }
+
+        // ─── Memoria: Rex reputation insights ───────────────────────
+        try {
+          // Check for negative review trends
+          const negativeReviews = pendingReviews.filter((r) => r.rating <= 2)
+          if (negativeReviews.length > 0) {
+            // Find most common complaint theme from negative review text
+            const complaints = negativeReviews.map((r) => r.reviewText).join(' ')
+            const themes = ['communication', 'pricing', 'quality', 'timeliness', 'professionalism', 'cleanliness']
+            const themeCounts = themes.map((t) => ({ theme: t, count: (complaints.toLowerCase().match(new RegExp(t, 'g')) || []).length }))
+            const topTheme = themeCounts.sort((a, b) => b.count - a.count)[0]
+            const theme = topTheme.count > 0 ? topTheme.theme : 'general dissatisfaction'
+
+            await recordInsight({
+              clientId: client.id,
+              category: 'reputation',
+              insight: `Negative review count increased by ${negativeReviews.length} this period. Most common complaint theme: ${theme}.`,
+              confidence: 'medium',
+              source: 'Rex',
+              tradeVertical: client.industry,
+            })
+          }
+
+          // Check response rate
+          const allReviews = await prisma.review.findMany({
+            where: { clientId: client.id },
+          })
+          const respondedReviews = allReviews.filter((r) => r.finalResponse || r.status === 'posted')
+          const responseRate = allReviews.length > 0 ? respondedReviews.length / allReviews.length : 1
+
+          if (responseRate < 0.5 && allReviews.length >= 4) {
+            await recordInsight({
+              clientId: client.id,
+              category: 'reputation',
+              insight: 'Owner response rate to Google reviews is below 50%. Businesses that respond to all reviews average 0.4 higher star ratings over 6 months.',
+              confidence: 'high',
+              source: 'Rex',
+              tradeVertical: client.industry,
+            })
+          }
+        } catch (memoriaErr) {
+          console.error('Rex Memoria insight error:', memoriaErr)
         }
 
         results.push({ clientId: client.id, businessName: client.businessName, newReviews: totalNew })
