@@ -125,6 +125,14 @@ model AgentClient {
   riverBusinessHours    String?
   riverAppointmentTypes String?
 
+  // Memoria Standalone
+  memoriaEnabled        Boolean  @default(false)
+  memoriaStandalone     Boolean  @default(false)
+  memoriaStartDate      DateTime?
+  intakeCompleted       Boolean  @default(false)
+  clientSlug            String?  @unique
+  memoriaGoals          String?  // JSON: challenge, decision, success
+
   // Subscription info
   tier                  String   @default("complete")
   active                Boolean  @default(true)

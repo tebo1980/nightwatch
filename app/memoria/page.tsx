@@ -41,12 +41,13 @@ interface Benchmark {
 
 // ─── Constants ──────────────────────────────────────────────────────
 
-type Tab = 'intelligence' | 'intake' | 'benchmarks' | 'settings'
+type Tab = 'intelligence' | 'intake' | 'benchmarks' | 'standalone' | 'settings'
 
 const TABS: { key: Tab; label: string; emoji: string }[] = [
   { key: 'intelligence', label: 'Intelligence', emoji: '🧠' },
   { key: 'intake', label: 'Data Intake', emoji: '📥' },
   { key: 'benchmarks', label: 'Benchmarks', emoji: '📊' },
+  { key: 'standalone', label: 'Standalone', emoji: '💜' },
   { key: 'settings', label: 'Settings', emoji: '⚙️' },
 ]
 
@@ -150,6 +151,7 @@ export default function MemoriaPage() {
         {activeTab === 'intelligence' && <IntelligenceTab clients={clients} />}
         {activeTab === 'intake' && <IntakeTab clients={clients} />}
         {activeTab === 'benchmarks' && <BenchmarksTab clients={clients} />}
+        {activeTab === 'standalone' && <StandaloneTab />}
         {activeTab === 'settings' && <SettingsTab />}
       </div>
     </div>
@@ -942,7 +944,198 @@ function BenchmarksTab({ clients }: { clients: AgentClientOption[] }) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// TAB 4: Settings
+// TAB: Standalone Clients
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+interface StandaloneClient {
+  id: string
+  businessName: string
+  industry: string
+  ownerName: string
+  ownerEmail: string
+  city: string
+  state: string
+  clientSlug: string | null
+  memoriaStartDate: string | null
+  intakeCompleted: boolean
+  createdAt: string
+}
+
+function StandaloneTab() {
+  const [clients, setClients] = useState<StandaloneClient[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+
+  // New client form
+  const [newName, setNewName] = useState('')
+  const [newIndustry, setNewIndustry] = useState('')
+  const [newOwner, setNewOwner] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [creating, setCreating] = useState(false)
+
+  const loadClients = useCallback(() => {
+    setLoading(true)
+    fetch('/api/memoria/standalone')
+      .then((r) => r.json())
+      .then((data) => setClients(data.clients || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { loadClients() }, [loadClients])
+
+  const createClient = async () => {
+    if (!newName || !newIndustry || !newOwner || !newEmail) return
+    setCreating(true)
+    try {
+      await fetch('/api/memoria/standalone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          businessName: newName,
+          industry: newIndustry,
+          ownerName: newOwner,
+          ownerFirstName: newOwner.split(' ')[0],
+          ownerEmail: newEmail,
+        }),
+      })
+      setShowForm(false)
+      setNewName(''); setNewIndustry(''); setNewOwner(''); setNewEmail('')
+      loadClients()
+    } catch { /* ignore */ }
+    setCreating(false)
+  }
+
+  const sendPortalLink = async (client: StandaloneClient) => {
+    if (!client.clientSlug) return
+    const portalUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/memoria/portal/${client.clientSlug}`
+    await fetch('/api/della/draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: client.id,
+        emailType: 'memoria-portal-link',
+        recipientName: client.ownerName,
+        recipientEmail: client.ownerEmail,
+        requestNotes: `Send the Memoria portal link to ${client.ownerName}. Their personal Memoria Intelligence portal is at: ${portalUrl}\n\nThis is their private business intelligence dashboard where they can view their Intelligence Brief, benchmark comparisons, and upload new data.`,
+      }),
+    })
+    alert(`Draft created — check Della to review and send to ${client.ownerEmail}`)
+  }
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h3 className="text-sm font-medium text-[#F2EDE4]">Standalone Memoria Clients</h3>
+          <p className="text-xs text-[#8A8070]">Businesses using Memoria as a standalone product ($249/mo)</p>
+        </div>
+        <button onClick={() => setShowForm(!showForm)} className={btnPrimary}>
+          {showForm ? 'Cancel' : '+ New Standalone Client'}
+        </button>
+      </div>
+
+      {/* New Client Form */}
+      {showForm && (
+        <div className={cardClass + ' p-6 mb-6 border-[rgba(124,58,237,0.3)]'}>
+          <h4 className="text-sm font-medium text-[#F2EDE4] mb-4">Create Standalone Memoria Client</h4>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="text-xs text-[#8A8070] mb-1 block">Business Name *</label>
+              <input value={newName} onChange={(e) => setNewName(e.target.value)} className={inputClass} placeholder="Business name" />
+            </div>
+            <div>
+              <label className="text-xs text-[#8A8070] mb-1 block">Industry / Trade *</label>
+              <input value={newIndustry} onChange={(e) => setNewIndustry(e.target.value)} className={inputClass} placeholder="e.g. Plumber" />
+            </div>
+            <div>
+              <label className="text-xs text-[#8A8070] mb-1 block">Owner Name *</label>
+              <input value={newOwner} onChange={(e) => setNewOwner(e.target.value)} className={inputClass} placeholder="Full name" />
+            </div>
+            <div>
+              <label className="text-xs text-[#8A8070] mb-1 block">Owner Email *</label>
+              <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className={inputClass} placeholder="email@example.com" />
+            </div>
+          </div>
+          <button onClick={createClient} disabled={creating || !newName || !newIndustry || !newOwner || !newEmail} className={btnPrimary}>
+            {creating ? 'Creating...' : 'Create Client'}
+          </button>
+        </div>
+      )}
+
+      {/* Stats */}
+      {clients.length > 0 && (
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className={cardClass + ' p-4'}>
+            <div className="text-2xl font-semibold text-purple-400">{clients.length}</div>
+            <div className="text-xs text-[#8A8070] mt-1">Active Standalone Clients</div>
+          </div>
+          <div className={cardClass + ' p-4'}>
+            <div className="text-2xl font-semibold text-purple-400">${(clients.length * 249).toLocaleString()}</div>
+            <div className="text-xs text-[#8A8070] mt-1">Monthly Recurring</div>
+          </div>
+          <div className={cardClass + ' p-4'}>
+            <div className="text-2xl font-semibold text-green-400">{clients.filter((c) => c.intakeCompleted).length}</div>
+            <div className="text-xs text-[#8A8070] mt-1">Intake Completed</div>
+          </div>
+        </div>
+      )}
+
+      {/* Client List */}
+      {loading ? (
+        <div className="text-center text-[#8A8070] py-20">Loading...</div>
+      ) : clients.length === 0 ? (
+        <div className="text-center py-20">
+          <p className="text-4xl mb-4">💜</p>
+          <p className="text-[#8A8070]">No standalone Memoria clients yet.</p>
+          <p className="text-xs text-[#8A8070] mt-2">
+            Create a standalone client or share the onboarding link:{' '}
+            <span className="text-[#C17B2A] font-mono">/memoria/onboard</span>
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {clients.map((client) => (
+            <div key={client.id} className={cardClass + ' p-4 flex items-center justify-between'}>
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center text-lg">🧠</div>
+                <div>
+                  <div className="text-sm font-medium text-[#F2EDE4]">{client.businessName}</div>
+                  <div className="text-xs text-[#8A8070]">
+                    {client.industry} · {client.ownerName} · {client.ownerEmail}
+                  </div>
+                  {client.clientSlug && (
+                    <div className="text-[10px] text-purple-400 font-mono mt-0.5">/memoria/portal/{client.clientSlug}</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-right mr-2">
+                  {client.intakeCompleted ? (
+                    <span className="text-[10px] text-green-400 bg-green-500/20 px-2 py-0.5 rounded-full border border-green-500/30">Intake Done</span>
+                  ) : (
+                    <span className="text-[10px] text-yellow-400 bg-yellow-500/20 px-2 py-0.5 rounded-full border border-yellow-500/30">Awaiting Data</span>
+                  )}
+                  <div className="text-[10px] text-[#8A8070] mt-1">Since {fmtDate(client.createdAt)}</div>
+                </div>
+                <button
+                  onClick={() => sendPortalLink(client)}
+                  className={btnSecondary + ' !text-xs !px-3 !py-1.5'}
+                  title="Send portal link via Della"
+                >
+                  ✉️ Send Portal Link
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TAB: Settings
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function SettingsTab() {

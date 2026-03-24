@@ -51,6 +51,7 @@ export default function Dashboard() {
   const [clients, setClients] = useState<AgentClientCard[]>([])
   const [loading, setLoading] = useState(true)
   const [boltStats, setBoltStats] = useState({ configs: 0, estimatesThisMonth: 0, totalValue: 0 })
+  const [memoriaStats, setMemoriaStats] = useState({ count: 0, mrr: 0 })
 
   useEffect(() => {
     fetch('/api/agent-clients')
@@ -74,6 +75,14 @@ export default function Dashboard() {
               setBoltStats({ configs: configs.length, estimatesThisMonth: thisMonth.length, totalValue: thisMonth.reduce((s: number, e: { totalAmount: number }) => s + e.totalAmount, 0) })
             })
         }
+      })
+      .catch(() => {})
+    // Load Memoria standalone stats
+    fetch('/api/memoria/standalone')
+      .then((r) => r.json())
+      .then((data) => {
+        const count = (data.clients || []).length
+        setMemoriaStats({ count, mrr: count * 249 })
       })
       .catch(() => {})
   }, [])
@@ -134,6 +143,29 @@ export default function Dashboard() {
             </div>
           </Link>
         )}
+
+        {/* Memoria Standalone */}
+        <Link href="/memoria" className="block bg-[#1E1B16] rounded-xl border border-[rgba(124,58,237,0.15)] p-4 mb-8 hover:border-[rgba(124,58,237,0.4)] transition-colors">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="text-xl">🧠</span>
+              <div>
+                <div className="text-sm font-medium text-[#F2EDE4]">Memoria Standalone</div>
+                <div className="text-xs text-[#8A8070]">Business intelligence — $249/mo · One-time intake: $299</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="text-right">
+                <div className="text-lg font-semibold text-purple-400">{memoriaStats.count}</div>
+                <div className="text-[10px] text-[#8A8070]">Active Clients</div>
+              </div>
+              <div className="text-right">
+                <div className="text-lg font-semibold text-purple-400">${memoriaStats.mrr.toLocaleString()}</div>
+                <div className="text-[10px] text-[#8A8070]">Monthly Recurring</div>
+              </div>
+            </div>
+          </div>
+        </Link>
 
         {/* Agent Dashboard Links */}
         <div className="flex flex-wrap gap-2 mb-8">
