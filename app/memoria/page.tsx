@@ -149,7 +149,7 @@ export default function MemoriaPage() {
         {/* Tab Content */}
         {activeTab === 'intelligence' && <IntelligenceTab clients={clients} />}
         {activeTab === 'intake' && <IntakeTab clients={clients} />}
-        {activeTab === 'benchmarks' && <BenchmarksTab />}
+        {activeTab === 'benchmarks' && <BenchmarksTab clients={clients} />}
         {activeTab === 'settings' && <SettingsTab />}
       </div>
     </div>
@@ -647,10 +647,134 @@ function IntakeTab({ clients }: { clients: AgentClientOption[] }) {
 // TAB 3: Benchmarks
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function BenchmarksTab() {
+interface BenchmarkComparison {
+  percentile: string
+  benchmarkMedian: number
+  topQuartile: number
+  bottomQuartile: number
+  sampleSize: number
+  clientValue: number | null
+  insight: string
+}
+
+const METRIC_LABELS: Record<string, string> = {
+  monthly_call_volume: 'Monthly Call Volume',
+  cost_per_call: 'Cost per Call',
+  review_rating_average: 'Review Rating',
+  review_response_rate: 'Review Response Rate',
+  monthly_revenue_estimate: 'Monthly Revenue',
+  cogs_percentage: 'COGS %',
+  lead_conversion_rate: 'Lead Conversion Rate',
+  average_job_value: 'Average Job Value',
+}
+
+const PERCENTILE_COLORS: Record<string, string> = {
+  'Top 25%': 'text-green-400 bg-green-500/20 border-green-500/30',
+  'Above Median': 'text-blue-400 bg-blue-500/20 border-blue-500/30',
+  'Below Median': 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30',
+  'Bottom 25%': 'text-red-400 bg-red-500/20 border-red-500/30',
+  'N/A': 'text-gray-400 bg-gray-500/20 border-gray-500/30',
+}
+
+function BenchmarkBar({ comparison, metric }: { comparison: BenchmarkComparison; metric: string }) {
+  const { bottomQuartile: q1, benchmarkMedian: med, topQuartile: q3, clientValue } = comparison
+  const min = Math.min(q1, clientValue ?? q1) * 0.8
+  const max = Math.max(q3, clientValue ?? q3) * 1.2
+  const range = max - min || 1
+
+  const toPercent = (v: number) => Math.max(0, Math.min(100, ((v - min) / range) * 100))
+
+  const q1Pos = toPercent(q1)
+  const medPos = toPercent(med)
+  const q3Pos = toPercent(q3)
+  const clientPos = clientValue !== null ? toPercent(clientValue) : null
+
+  return (
+    <div className={cardClass + ' p-4'}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs text-[#8A8070] uppercase tracking-wide">{METRIC_LABELS[metric] || metric}</div>
+        {comparison.percentile !== 'N/A' && (
+          <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${PERCENTILE_COLORS[comparison.percentile] || PERCENTILE_COLORS['N/A']}`}>
+            {comparison.percentile}
+          </span>
+        )}
+      </div>
+
+      {/* Bar */}
+      <div className="relative h-8 bg-[#0E0C0A] rounded-lg overflow-hidden mb-2">
+        {/* Bottom quartile zone */}
+        <div className="absolute top-0 bottom-0 bg-red-500/10 rounded-l-lg" style={{ left: 0, width: `${q1Pos}%` }} />
+        {/* Middle zone */}
+        <div className="absolute top-0 bottom-0 bg-yellow-500/10" style={{ left: `${q1Pos}%`, width: `${medPos - q1Pos}%` }} />
+        {/* Above median zone */}
+        <div className="absolute top-0 bottom-0 bg-blue-500/10" style={{ left: `${medPos}%`, width: `${q3Pos - medPos}%` }} />
+        {/* Top quartile zone */}
+        <div className="absolute top-0 bottom-0 bg-green-500/10 rounded-r-lg" style={{ left: `${q3Pos}%`, right: 0 }} />
+
+        {/* Q1 marker */}
+        <div className="absolute top-0 bottom-0 w-px bg-red-400/50" style={{ left: `${q1Pos}%` }} />
+        {/* Median marker */}
+        <div className="absolute top-0 bottom-0 w-0.5 bg-yellow-400/70" style={{ left: `${medPos}%` }} />
+        {/* Q3 marker */}
+        <div className="absolute top-0 bottom-0 w-px bg-green-400/50" style={{ left: `${q3Pos}%` }} />
+
+        {/* Client value marker */}
+        {clientPos !== null && (
+          <div className="absolute top-0 bottom-0 flex items-center" style={{ left: `${clientPos}%`, transform: 'translateX(-50%)' }}>
+            <div className="w-3 h-3 bg-[#C17B2A] rounded-full border-2 border-[#F2EDE4] shadow-lg shadow-[#C17B2A]/30 z-10" />
+          </div>
+        )}
+      </div>
+
+      {/* Labels below bar */}
+      <div className="flex justify-between text-[10px] text-[#8A8070]">
+        <span>Bottom 25%</span>
+        <span>Median</span>
+        <span>Top 25%</span>
+      </div>
+
+      {/* Values */}
+      <div className="flex items-center justify-between mt-2">
+        <div className="flex gap-4 text-[10px] text-[#8A8070]">
+          <span>Q1: {fmtBenchVal(metric, q1)}</span>
+          <span>Median: {fmtBenchVal(metric, med)}</span>
+          <span>Q3: {fmtBenchVal(metric, q3)}</span>
+        </div>
+        {clientValue !== null && (
+          <div className="text-xs font-medium text-[#C17B2A]">
+            You: {fmtBenchVal(metric, clientValue)}
+          </div>
+        )}
+      </div>
+
+      {/* Insight text */}
+      {comparison.insight && comparison.percentile !== 'N/A' && (
+        <p className="text-xs text-[#8A8070] mt-2 leading-relaxed">{comparison.insight}</p>
+      )}
+
+      <div className="text-[10px] text-[#8A8070] mt-1">
+        {comparison.sampleSize} business{comparison.sampleSize !== 1 ? 'es' : ''} in sample
+      </div>
+    </div>
+  )
+}
+
+function fmtBenchVal(metric: string, value: number): string {
+  if (['review_rating_average'].includes(metric)) return `${value.toFixed(1)}★`
+  if (['review_response_rate', 'cogs_percentage', 'lead_conversion_rate'].includes(metric)) return `${value.toFixed(1)}%`
+  if (['cost_per_call', 'monthly_revenue_estimate', 'average_job_value'].includes(metric)) return `$${Math.round(value).toLocaleString()}`
+  if (['monthly_call_volume'].includes(metric)) return `${Math.round(value)}`
+  return value.toLocaleString()
+}
+
+function BenchmarksTab({ clients }: { clients: AgentClientOption[] }) {
   const [benchmarks, setBenchmarks] = useState<Benchmark[]>([])
   const [loading, setLoading] = useState(true)
   const [recalculating, setRecalculating] = useState(false)
+  const [selectedClient, setSelectedClient] = useState('')
+  const [comparisons, setComparisons] = useState<Record<string, BenchmarkComparison> | null>(null)
+  const [comparisonsLoading, setComparisonsLoading] = useState(false)
+  const [clientVertical, setClientVertical] = useState('')
 
   const loadBenchmarks = useCallback(() => {
     setLoading(true)
@@ -672,11 +796,36 @@ function BenchmarksTab() {
         body: JSON.stringify({ recalculate: true }),
       })
       loadBenchmarks()
+      // Refresh client comparisons if a client is selected
+      if (selectedClient) benchmarkThisClient()
     } catch { /* ignore */ }
     setRecalculating(false)
   }
 
-  // Group by trade vertical
+  const benchmarkThisClient = async () => {
+    if (!selectedClient) return
+    setComparisonsLoading(true)
+    try {
+      const res = await fetch(`/api/memoria/benchmarks?clientId=${selectedClient}`)
+      const data = await res.json()
+      setComparisons(data.comparisons || null)
+      setClientVertical(data.tradeVertical || '')
+    } catch {
+      setComparisons(null)
+    }
+    setComparisonsLoading(false)
+  }
+
+  useEffect(() => {
+    if (selectedClient) {
+      benchmarkThisClient()
+    } else {
+      setComparisons(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClient])
+
+  // Group raw benchmarks by trade vertical for the general view
   const grouped: Record<string, Benchmark[]> = {}
   for (const bm of benchmarks) {
     if (!grouped[bm.tradeVertical]) grouped[bm.tradeVertical] = []
@@ -685,45 +834,109 @@ function BenchmarksTab() {
 
   return (
     <>
-      <div className="flex justify-between items-center mb-6">
-        <p className="text-sm text-[#8A8070]">Benchmarks calculated from aggregated client data by trade vertical</p>
+      {/* Controls */}
+      <div className="flex flex-wrap gap-4 mb-6 items-center">
+        <select value={selectedClient} onChange={(e) => setSelectedClient(e.target.value)} className={inputClass + ' !w-auto min-w-[260px]'}>
+          <option value="">All verticals (overview)</option>
+          {clients.map((c) => (
+            <option key={c.id} value={c.id}>{c.businessName} — {c.industry}</option>
+          ))}
+        </select>
+        {selectedClient && (
+          <button onClick={benchmarkThisClient} disabled={comparisonsLoading} className={btnPrimary}>
+            {comparisonsLoading ? 'Benchmarking...' : '📊 Benchmark This Client'}
+          </button>
+        )}
         <button onClick={recalculate} disabled={recalculating} className={btnSecondary}>
           {recalculating ? 'Recalculating...' : '🔄 Recalculate Benchmarks'}
         </button>
       </div>
 
-      {loading ? (
-        <div className="text-center text-[#8A8070] py-20">Loading benchmarks...</div>
-      ) : benchmarks.length === 0 ? (
-        <div className="text-center py-20">
-          <p className="text-[#8A8070]">No benchmarks yet.</p>
-          <p className="text-xs text-[#8A8070] mt-2">Benchmarks are generated as client data is processed through the Data Intake tab.</p>
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {Object.entries(grouped).map(([vertical, bms]) => (
-            <div key={vertical}>
-              <h3 className="text-sm font-medium text-[#F2EDE4] mb-3 flex items-center gap-2">
-                🏗️ {vertical}
-                <span className="text-[10px] text-[#8A8070] bg-[#0E0C0A] px-2 py-0.5 rounded-full">{bms.length} metrics</span>
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {bms.map((bm) => (
-                  <div key={bm.id} className={cardClass + ' p-4'}>
-                    <div className="text-xs text-[#8A8070] uppercase tracking-wide mb-1">{bm.metric}</div>
-                    <div className="text-lg font-semibold text-[#F2EDE4]">{bm.metricValue.toLocaleString()}</div>
-                    <div className="flex items-center gap-3 mt-2 text-[10px] text-[#8A8070]">
-                      <span className="text-[#C17B2A]">{bm.percentile}</span>
-                      <span>{bm.sampleSize} client{bm.sampleSize !== 1 ? 's' : ''} contributing</span>
-                    </div>
-                    <div className="text-[10px] text-[#8A8070] mt-1">{bm.region} &middot; {fmtDate(bm.calculatedAt)}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+      {/* Client Benchmark Comparison View */}
+      {selectedClient && comparisons && Object.keys(comparisons).length > 0 && (
+        <div className="mb-8">
+          <h3 className="text-sm font-medium text-[#F2EDE4] mb-1 flex items-center gap-2">
+            📊 Benchmark Comparison
+            {clientVertical && <span className="text-[10px] text-[#C17B2A] bg-[#C17B2A]/10 px-2 py-0.5 rounded-full">{clientVertical}</span>}
+          </h3>
+          <p className="text-xs text-[#8A8070] mb-4">
+            How this client compares against other {clientVertical || 'similar'} businesses in Louisville-Southern Indiana.
+            <span className="inline-block w-3 h-3 bg-[#C17B2A] rounded-full ml-2 align-middle border-2 border-[#F2EDE4]" /> = this client
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {Object.entries(comparisons).map(([metric, comp]) => (
+              <BenchmarkBar key={metric} comparison={comp} metric={metric} />
+            ))}
+          </div>
         </div>
       )}
+
+      {selectedClient && comparisonsLoading && (
+        <div className="text-center text-[#8A8070] py-12 mb-8">Loading client benchmarks...</div>
+      )}
+
+      {selectedClient && !comparisonsLoading && comparisons && Object.keys(comparisons).length === 0 && (
+        <div className="text-center py-12 mb-8">
+          <p className="text-[#8A8070]">No benchmark data available for this client yet.</p>
+          <p className="text-xs text-[#8A8070] mt-2">Process historical data in the Data Intake tab first, then recalculate benchmarks.</p>
+        </div>
+      )}
+
+      {/* General Benchmark Overview */}
+      <div>
+        <h3 className="text-sm font-medium text-[#F2EDE4] mb-4">
+          {selectedClient ? 'All Vertical Benchmarks' : 'Benchmarks by Trade Vertical'}
+        </h3>
+        {loading ? (
+          <div className="text-center text-[#8A8070] py-20">Loading benchmarks...</div>
+        ) : benchmarks.length === 0 ? (
+          <div className="text-center py-20">
+            <p className="text-[#8A8070]">No benchmarks yet.</p>
+            <p className="text-xs text-[#8A8070] mt-2">Benchmarks are generated as client data is processed through the Data Intake tab.</p>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {Object.entries(grouped).map(([vertical, bms]) => {
+              // Only show median benchmarks in overview, group by metric
+              const metricMap: Record<string, Benchmark> = {}
+              for (const bm of bms) {
+                if (bm.percentile === '50th' || !metricMap[bm.metric]) {
+                  metricMap[bm.metric] = bm
+                }
+              }
+              const uniqueMetrics = Object.values(metricMap)
+
+              return (
+                <div key={vertical}>
+                  <h3 className="text-sm font-medium text-[#F2EDE4] mb-3 flex items-center gap-2">
+                    🏗️ {vertical}
+                    <span className="text-[10px] text-[#8A8070] bg-[#0E0C0A] px-2 py-0.5 rounded-full">
+                      {uniqueMetrics.length} metric{uniqueMetrics.length !== 1 ? 's' : ''}
+                    </span>
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {uniqueMetrics.map((bm) => (
+                      <div key={bm.id} className={cardClass + ' p-4'}>
+                        <div className="text-xs text-[#8A8070] uppercase tracking-wide mb-1">
+                          {METRIC_LABELS[bm.metric] || bm.metric.replace(/_/g, ' ')}
+                        </div>
+                        <div className="text-lg font-semibold text-[#F2EDE4]">
+                          {fmtBenchVal(bm.metric, bm.metricValue)}
+                        </div>
+                        <div className="flex items-center gap-3 mt-2 text-[10px] text-[#8A8070]">
+                          <span className="text-[#C17B2A]">{bm.percentile} percentile</span>
+                          <span>{bm.sampleSize} client{bm.sampleSize !== 1 ? 's' : ''} contributing</span>
+                        </div>
+                        <div className="text-[10px] text-[#8A8070] mt-1">{bm.region} · {fmtDate(bm.calculatedAt)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </>
   )
 }

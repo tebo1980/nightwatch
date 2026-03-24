@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getIntelligenceSummary, getClientIntelligence } from '@/lib/memoria'
+import { generateBenchmarkSummary } from '@/lib/benchmarks'
 import { prisma } from '@/lib/prisma'
 import Anthropic from '@anthropic-ai/sdk'
 
@@ -81,6 +82,15 @@ export async function POST(req: NextRequest) {
     // 6. Build intelligence summary
     const intelligenceSummary = await getIntelligenceSummary(clientId)
 
+    // 6b. Build benchmark context
+    let benchmarkContext = ''
+    try {
+      const benchmarkSummary = await generateBenchmarkSummary(clientId, client.industry || 'General')
+      if (benchmarkSummary && !benchmarkSummary.includes('No vertical benchmarks')) {
+        benchmarkContext = `\n\n${benchmarkSummary}`
+      }
+    } catch { /* Benchmark data may not exist yet */ }
+
     // If no insights exist, return the raw summary without calling Claude
     if (insights.length === 0) {
       return NextResponse.json({
@@ -110,7 +120,7 @@ Never say things like 'consider reviewing your data' or 'it may be worth explori
 Here is everything I have learned about this business:
 
 ${intelligenceSummary}
-${coleContext}${rexContext}${irisContext}
+${coleContext}${rexContext}${irisContext}${benchmarkContext ? `\n\nBenchmark context for this business compared to other ${client.industry} businesses in the Louisville and Southern Indiana market:\n${benchmarkContext}\n\nReference relevant benchmarks in your strategic recommendations where they strengthen the advice.` : ''}
 
 Current date: ${today}
 

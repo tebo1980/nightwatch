@@ -1,6 +1,16 @@
 import { prisma } from './prisma'
 import type { ClientIntelligence } from '@prisma/client'
 
+// Lazy import to avoid circular dependency — benchmarks imports memoria
+let _autoBenchmarkInsight: ((clientId: string, insightText: string, tradeVertical: string) => Promise<void>) | null = null
+async function getAutoBenchmark() {
+  if (!_autoBenchmarkInsight) {
+    const mod = await import('./benchmarks')
+    _autoBenchmarkInsight = mod.autoBenchmarkInsight
+  }
+  return _autoBenchmarkInsight
+}
+
 // ─── Confidence auto-upgrade based on data points ────────────────────
 function confidenceFromDataPoints(dataPoints: number): 'low' | 'medium' | 'high' {
   if (dataPoints >= 6) return 'high'
@@ -41,7 +51,7 @@ export async function recordInsight(params: {
     })
   }
 
-  return prisma.clientIntelligence.create({
+  const created = await prisma.clientIntelligence.create({
     data: {
       clientId: params.clientId,
       category: params.category,
@@ -52,6 +62,19 @@ export async function recordInsight(params: {
       isBenchmark: params.isBenchmark ?? false,
     },
   })
+
+  // Auto-benchmark: if this insight contains numeric metrics and has a trade vertical,
+  // compare against vertical benchmarks. Skip if this IS a benchmark insight to avoid loops.
+  if (params.tradeVertical && !params.isBenchmark && params.source !== 'benchmark-engine') {
+    try {
+      const autoBenchmark = await getAutoBenchmark()
+      await autoBenchmark(params.clientId, params.insight, params.tradeVertical)
+    } catch {
+      // Benchmarking is non-critical — don't fail the insight recording
+    }
+  }
+
+  return created
 }
 
 // ─── Get all active insights for a client ────────────────────────────
