@@ -467,6 +467,53 @@ model PriceAlert {
   createdAt     DateTime      @default(now())
 }
 
+// ─── Memoria: Client Intelligence Layer ──────────────────────────
+
+model ClientIntelligence {
+  id             String   @id @default(cuid())
+  clientId       String
+  category       String
+  insight        String
+  confidence     String   @default("low")
+  dataPoints     Int      @default(1)
+  firstObserved  DateTime @default(now())
+  lastConfirmed  DateTime @default(now())
+  source         String
+  actionTaken    String?
+  isActive       Boolean  @default(true)
+  isBenchmark    Boolean  @default(false)
+  tradeVertical  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model ClientDataIntake {
+  id             String    @id @default(cuid())
+  clientId       String
+  dataType       String
+  periodStart    DateTime
+  periodEnd      DateTime
+  rawData        Json
+  processedData  Json?
+  status         String    @default("pending")
+  processedAt    DateTime?
+  insightsCount  Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model VerticalBenchmark {
+  id             String   @id @default(cuid())
+  tradeVertical  String
+  metric         String
+  metricValue    Float
+  percentile     String
+  sampleSize     Int
+  region         String   @default("Louisville-Southern-Indiana")
+  calculatedAt   DateTime @default(now())
+  createdAt      DateTime @default(now())
+}
+
 // ─── Sage: Social Media Posts ─────────────────────────────────────
 
 model SagePost {
