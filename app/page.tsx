@@ -181,6 +181,7 @@ export default function Dashboard() {
             { name: 'Atlas', href: '/atlas', emoji: '🗺️' },
             { name: 'Bolt', href: '/bolt', emoji: '⚡' },
             { name: 'Memoria', href: '/memoria', emoji: '🧠' },
+            { name: 'GBP', href: '/gbp', emoji: '📍' },
             { name: 'Scraper', href: '/scraper', emoji: '🕷️' },
             { name: 'Report Generator', href: '/report-generator', emoji: '📝' },
           ].map((link) => (
