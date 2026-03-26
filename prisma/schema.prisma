@@ -630,3 +630,20 @@ model GroupResponseTemplate {
   templateText String
   createdAt    DateTime @default(now())
 }
+
+// ─── Iris: Estimate Reactivation Log ────────────────────────────────
+
+model EstimateReactivation {
+  id            String    @id @default(cuid())
+  clientId      String
+  prospectName  String
+  jobType       String
+  quoteAmount   String?
+  quotedAt      DateTime?
+  reactivatedAt DateTime  @default(now())
+  contactMethod String
+  outcome       String    @default("no_response")
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
