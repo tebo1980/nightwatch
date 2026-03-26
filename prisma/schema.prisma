@@ -647,3 +647,24 @@ model EstimateReactivation {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
+
+// ─── Competitor Intelligence ────────────────────────────────────────
+
+model CompetitorIntel {
+  id               String   @id @default(cuid())
+  competitorName   String
+  website          String?
+  monthlyPriceMin  Float?
+  monthlyPriceMax  Float?
+  setupFee         Float?
+  contractLength   String?
+  guaranteeOffered Boolean  @default(false)
+  guaranteeDetails String?
+  keyFeatures      String?
+  weaknesses       String?
+  clientComplaints String?
+  lastUpdated      DateTime @default(now())
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
