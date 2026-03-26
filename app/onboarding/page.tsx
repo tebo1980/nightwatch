@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 
 const INDUSTRIES = [
@@ -181,6 +181,9 @@ export default function OnboardingPage() {
           {boltDone && (
             <div className="bg-green-500/10 text-green-400 text-sm px-4 py-2 rounded-lg mb-4">&#9889; Bolt enabled at /bolt/{boltSlug}</div>
           )}
+
+          {/* Nextdoor Setup */}
+          <NextdoorSetupSection clientId={createdClient.id} />
 
           <div className="flex flex-col gap-3">
             <Link href={`/clients/${createdClient.id}`} className="bg-[#C17B2A] text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-[#D4892F] transition-colors">
@@ -519,6 +522,145 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex gap-3">
       <span className="text-xs text-[#8A8070] w-28 shrink-0">{label}</span>
       <span className="text-sm text-[#F2EDE4] whitespace-pre-line">{value}</span>
+    </div>
+  )
+}
+
+// ─── Nextdoor Business Page Setup ───────────────────────────────────
+
+const NEXTDOOR_ITEMS = [
+  { key: 'nd_claim_page', label: 'Create or claim Nextdoor business page for this client' },
+  { key: 'nd_category', label: 'Set primary business category matching their trade' },
+  { key: 'nd_description', label: 'Write business description in neighbor voice — warm, local, no jargon' },
+  { key: 'nd_photos', label: 'Upload at least 5 photos — team, truck, recent jobs, before and after' },
+  { key: 'nd_service_area', label: 'Add service area covering all relevant neighborhoods and zip codes' },
+  { key: 'nd_phone_website', label: 'Add phone number and website link' },
+  { key: 'nd_first_recommendation', label: 'Send first recommendation request to a past customer with direct Nextdoor link' },
+  { key: 'nd_first_post', label: 'Publish first helpful neighbor post — seasonal tip or recent job story' },
+  { key: 'nd_search_verify', label: 'Confirm business shows up when searching the trade in their neighborhood on Nextdoor' },
+]
+
+const NEXTDOOR_TIPS = [
+  'Post as a helpful neighbor not an advertiser — tips and stories outperform promotions',
+  'Ask customers to recommend you on Nextdoor after every job — these resurface when neighbors ask for referrals',
+  'Never post the same content repeatedly — Nextdoor flags repetitive posts quickly',
+  'Respond to every recommendation publicly to show engagement',
+  'Use real job photos from recognizable local streets when possible',
+  'Limit direct promotional posts to once or twice per month maximum',
+  'Reactive posts after storms or local events perform significantly better than scheduled content',
+]
+
+function NextdoorSetupSection({ clientId }: { clientId: string }) {
+  const [items, setItems] = useState<Record<string, boolean>>({})
+  const [loading, setLoading] = useState(true)
+  const [tipsOpen, setTipsOpen] = useState(false)
+
+  const loadItems = useCallback(() => {
+    fetch(`/api/gbp?clientId=${clientId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const map: Record<string, boolean> = {}
+        for (const item of data.items || []) {
+          if (item.itemKey.startsWith('nd_')) {
+            map[item.itemKey] = item.completed
+          }
+        }
+        setItems(map)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [clientId])
+
+  useEffect(() => { loadItems() }, [loadItems])
+
+  const toggleItem = async (key: string) => {
+    const newVal = !items[key]
+    setItems((prev) => ({ ...prev, [key]: newVal }))
+    await fetch('/api/gbp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId, itemKey: key, completed: newVal }),
+    })
+  }
+
+  const completedCount = NEXTDOOR_ITEMS.filter((i) => items[i.key]).length
+  const pct = Math.round((completedCount / NEXTDOOR_ITEMS.length) * 100)
+
+  return (
+    <div className="bg-[#0E0C0A] rounded-xl border border-[rgba(193,123,42,0.15)] p-5 mb-4 text-left">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-sm">🏘️</span>
+        <h3 className="text-sm font-medium text-[#F2EDE4]">Nextdoor Business Page Setup</h3>
+      </div>
+      <p className="text-xs text-[#8A8070] mb-4">Complete these items to fully optimize this client on Nextdoor.</p>
+
+      {/* Progress bar */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex-1 bg-[#1E1B16] rounded-full h-2">
+          <div
+            className="h-2 rounded-full transition-all duration-500"
+            style={{ width: `${pct}%`, background: pct === 100 ? '#22c55e' : '#C17B2A' }}
+          />
+        </div>
+        <span className="text-xs text-[#8A8070] shrink-0">{completedCount}/{NEXTDOOR_ITEMS.length}</span>
+      </div>
+
+      {/* Checklist */}
+      {loading ? (
+        <p className="text-xs text-[#8A8070]">Loading...</p>
+      ) : (
+        <div className="space-y-2 mb-4">
+          {NEXTDOOR_ITEMS.map((item) => {
+            const done = items[item.key] || false
+            return (
+              <label key={item.key} className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={done}
+                  onChange={() => toggleItem(item.key)}
+                  className="mt-0.5 w-4 h-4 rounded border-[rgba(193,123,42,0.3)] bg-[#1E1B16] text-[#C17B2A] focus:ring-[#C17B2A] focus:ring-offset-0 cursor-pointer accent-[#C17B2A]"
+                />
+                <span className={`text-xs leading-relaxed ${done ? 'text-[#8A8070] line-through' : 'text-[#F2EDE4] group-hover:text-[#C17B2A]'} transition-colors`}>
+                  {item.label}
+                </span>
+              </label>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Best Practices — collapsible */}
+      <div className="border border-[rgba(193,123,42,0.1)] rounded-lg overflow-hidden mb-3">
+        <button
+          onClick={() => setTipsOpen(!tipsOpen)}
+          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[rgba(193,123,42,0.03)] transition-colors"
+        >
+          <span className="text-xs font-medium text-[#C17B2A]">Nextdoor Best Practices</span>
+          <span className={`text-[#8A8070] text-[10px] transition-transform ${tipsOpen ? 'rotate-180' : ''}`}>▼</span>
+        </button>
+        {tipsOpen && (
+          <div className="px-4 pb-3 border-t border-[rgba(193,123,42,0.1)]">
+            <ul className="space-y-1.5 mt-3">
+              {NEXTDOOR_TIPS.map((tip, i) => (
+                <li key={i} className="text-[11px] text-[#8A8070] leading-relaxed flex gap-2">
+                  <span className="text-[#C17B2A] shrink-0">•</span>
+                  {tip}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* Static note */}
+      <div className="bg-[#1E1B16] border border-[rgba(193,123,42,0.1)] rounded-lg p-3">
+        <p className="text-[11px] text-[#8A8070] leading-relaxed">
+          Nextdoor recommendations work differently from Google reviews. They appear when neighbors search for trade
+          recommendations and when others ask the community for referrals. One strong cluster of recommendations in a
+          neighborhood can generate calls for months. Make getting Nextdoor recommendations part of the post-job routine
+          for every client.
+        </p>
+      </div>
     </div>
   )
 }
