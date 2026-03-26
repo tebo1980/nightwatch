@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 
 interface AgentClientBasic { id: string; businessName: string; sageEnabled: boolean }
@@ -152,6 +152,13 @@ export default function SageDashboard() {
             {clients.map((c) => <option key={c.id} value={c.id}>{c.businessName}</option>)}
           </select>
         </div>
+
+        {/* ─── COMMUNITY GROUP MODE (prominent, above calendar) ── */}
+        <CommunityGroupMode
+          clientId={selectedClientId}
+          clientName={clients.find((c) => c.id === selectedClientId)?.businessName || ''}
+          showToast={showToast}
+        />
 
         {/* ─── MONTHLY CALENDAR (full width, above grid) ──────── */}
         <CalendarSection
@@ -586,6 +593,505 @@ function StormResponseSection({ clientName, showToast }: { clientName: string; s
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// COMMUNITY GROUP MODE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type CgTab = 'builder' | 'rules' | 'templates'
+
+interface GroupRule {
+  id: string
+  groupName: string
+  platform: string
+  allowedPostFrequency: string | null
+  promoThread: boolean
+  bannedBehaviors: string | null
+  notes: string | null
+}
+
+interface ResponseTemplate {
+  id: string
+  templateName: string
+  platform: string
+  templateText: string
+}
+
+const POST_TYPES = [
+  'Educational Tip',
+  'Seasonal Reminder',
+  'Before and After Story',
+  'Storm or Event Response',
+  'Community Participation',
+  'Ask for Recommendations',
+]
+
+const PRE_POST_CHECKLIST = [
+  'Does this sound like a neighbor or like an ad',
+  'Is the neighborhood name mentioned naturally',
+  'Does it follow this group\'s posting rules',
+  'Is there a real photo from this job to attach',
+]
+
+function CommunityGroupMode({ clientId, clientName, showToast }: { clientId: string; clientName: string; showToast: (msg: string) => void }) {
+  const [activeTab, setActiveTab] = useState<CgTab>('builder')
+
+  const tabs: { key: CgTab; label: string }[] = [
+    { key: 'builder', label: 'Group Post Builder' },
+    { key: 'rules', label: 'Rules Tracker' },
+    { key: 'templates', label: 'Response Templates' },
+  ]
+
+  return (
+    <div className="mb-6 bg-[#1E1B16] rounded-2xl border border-[#C17B2A]/30 overflow-hidden">
+      {/* Accent top line */}
+      <div className="h-1 bg-gradient-to-r from-[#C17B2A] via-[#D4892F] to-[#C17B2A]" />
+
+      {/* Header */}
+      <div className="px-6 pt-5 pb-0">
+        <div className="flex items-center gap-3 mb-1">
+          <span className="text-sm">🏘️</span>
+          <h2 className="text-base font-medium text-[#F2EDE4]">Community Group Mode</h2>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#C17B2A]/20 text-[#C17B2A] border border-[#C17B2A]/30 font-semibold">New</span>
+        </div>
+        <p className="text-xs text-[#8A8070] mb-4">Nextdoor and Facebook group content that sounds like a neighbor, not a brand.</p>
+
+        {/* Tabs */}
+        <div className="flex gap-0 border-b border-[rgba(193,123,42,0.15)]">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={`px-4 py-2.5 text-xs font-medium transition-colors relative ${
+                activeTab === t.key ? 'text-[#C17B2A]' : 'text-[#8A8070] hover:text-[#F2EDE4]'
+              }`}
+            >
+              {t.label}
+              {activeTab === t.key && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#C17B2A] rounded-t" />
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tab content */}
+      <div className="px-6 py-5">
+        {activeTab === 'builder' && <BuilderTab clientName={clientName} showToast={showToast} />}
+        {activeTab === 'rules' && <RulesTab clientId={clientId} showToast={showToast} />}
+        {activeTab === 'templates' && <TemplatesTab clientId={clientId} showToast={showToast} />}
+      </div>
+    </div>
+  )
+}
+
+// ─── Tab 1: Group Post Builder ──────────────────────────────────────
+
+function BuilderTab({ clientName, showToast }: { clientName: string; showToast: (msg: string) => void }) {
+  const [trade, setTrade] = useState('')
+  const [neighborhood, setNeighborhood] = useState('')
+  const [postType, setPostType] = useState(POST_TYPES[0])
+  const [details, setDetails] = useState('')
+  const [tone, setTone] = useState('Nextdoor Neighbor Voice')
+  const [generating, setGenerating] = useState(false)
+  const [post, setPost] = useState('')
+
+  const inputCls = 'w-full bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-4 py-2.5 text-[#F2EDE4] text-sm focus:outline-none focus:border-[#C17B2A] transition-colors placeholder:text-[#8A8070]/50'
+
+  const generate = async () => {
+    if (!trade || !neighborhood || !details) return
+    setGenerating(true)
+    setPost('')
+    try {
+      const res = await fetch('/api/sage/community', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'generate_post',
+          clientName: clientName || 'the business',
+          trade,
+          neighborhood,
+          postType,
+          details,
+          tone,
+        }),
+      })
+      const data = await res.json()
+      setPost(data.post || '')
+      if (data.post) showToast('Post generated!')
+    } catch { showToast('Generation failed.') }
+    setGenerating(false)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs text-[#8A8070] mb-1.5">Client Name</label>
+          <input className={inputCls} value={clientName} readOnly={!!clientName} style={clientName ? { opacity: 0.6 } : {}} />
+        </div>
+        <div>
+          <label className="block text-xs text-[#8A8070] mb-1.5">Trade *</label>
+          <input className={inputCls} value={trade} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. plumber, roofer" />
+        </div>
+        <div>
+          <label className="block text-xs text-[#8A8070] mb-1.5">Neighborhood or Group Name *</label>
+          <input className={inputCls} value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} placeholder="e.g. St. Matthews Neighbors" />
+        </div>
+        <div>
+          <label className="block text-xs text-[#8A8070] mb-1.5">Post Type</label>
+          <select className={inputCls} value={postType} onChange={(e) => setPostType(e.target.value)}>
+            {POST_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs text-[#8A8070] mb-1.5">Specific details or context *</label>
+        <textarea className={inputCls + ' min-h-[80px]'} value={details} onChange={(e) => setDetails(e.target.value)}
+          placeholder="e.g. Just finished replacing a water heater for a family on Dundee Road — old one was 18 years old and about to fail." />
+      </div>
+
+      {/* Tone selector */}
+      <div>
+        <label className="block text-xs text-[#8A8070] mb-2">Tone</label>
+        <div className="flex gap-3">
+          {['Nextdoor Neighbor Voice', 'Facebook Group Member Voice'].map((t) => (
+            <label key={t} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="cg-tone"
+                checked={tone === t}
+                onChange={() => setTone(t)}
+                className="accent-[#C17B2A]"
+              />
+              <span className="text-xs text-[#F2EDE4]">{t}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <button onClick={generate} disabled={generating || !trade || !neighborhood || !details}
+        className="bg-[#C17B2A] text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-[#D4892F] transition-colors disabled:opacity-50">
+        {generating ? '🏘️ Generating...' : '🏘️ Generate Post'}
+      </button>
+
+      {/* Output */}
+      {post && (
+        <div className="mt-2">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-[#8A8070]">Generated post — edit as needed</span>
+            <button onClick={() => { navigator.clipboard.writeText(post); showToast('Copied!') }}
+              className="text-xs border border-[rgba(193,123,42,0.3)] text-[#C17B2A] px-3 py-1.5 rounded-lg hover:bg-[rgba(193,123,42,0.1)] transition-colors">
+              📋 Copy
+            </button>
+          </div>
+          <textarea className={inputCls + ' min-h-[140px] text-sm leading-relaxed'} value={post} onChange={(e) => setPost(e.target.value)} />
+
+          {/* Pre-post checklist */}
+          <div className="mt-3 bg-[#0E0C0A] rounded-lg p-3 border border-[rgba(193,123,42,0.1)]">
+            <p className="text-[10px] text-[#C17B2A] font-medium mb-2">Before posting, verify:</p>
+            {PRE_POST_CHECKLIST.map((item, i) => (
+              <label key={i} className="flex items-center gap-2 mb-1 cursor-pointer">
+                <input type="checkbox" className="accent-[#C17B2A] w-3 h-3" />
+                <span className="text-[11px] text-[#8A8070]">{item}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Tab 2: Rules Tracker ───────────────────────────────────────────
+
+function RulesTab({ clientId, showToast }: { clientId: string; showToast: (msg: string) => void }) {
+  const [rules, setRules] = useState<GroupRule[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+
+  // Form
+  const [groupName, setGroupName] = useState('')
+  const [platform, setPlatform] = useState('Facebook Group')
+  const [frequency, setFrequency] = useState('')
+  const [promoThread, setPromoThread] = useState(false)
+  const [banned, setBanned] = useState('')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const inputCls = 'w-full bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-4 py-2.5 text-[#F2EDE4] text-sm focus:outline-none focus:border-[#C17B2A] transition-colors placeholder:text-[#8A8070]/50'
+
+  const load = useCallback(() => {
+    if (!clientId) return
+    setLoading(true)
+    fetch(`/api/sage/community?clientId=${clientId}&type=rules`)
+      .then((r) => r.json())
+      .then((data) => setRules(data.rules || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [clientId])
+
+  useEffect(() => { load() }, [load])
+
+  const save = async () => {
+    if (!groupName) return
+    setSaving(true)
+    try {
+      await fetch('/api/sage/community', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save_rules',
+          clientId,
+          groupName,
+          platform,
+          allowedPostFrequency: frequency,
+          promoThread,
+          bannedBehaviors: banned,
+          notes,
+        }),
+      })
+      setGroupName(''); setFrequency(''); setPromoThread(false); setBanned(''); setNotes('')
+      setShowForm(false)
+      showToast('Group saved!')
+      load()
+    } catch { showToast('Save failed.') }
+    setSaving(false)
+  }
+
+  const deleteRule = async (id: string) => {
+    await fetch('/api/sage/community', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete_rules', id }),
+    })
+    showToast('Removed.')
+    load()
+  }
+
+  return (
+    <div>
+      {/* Warning banner */}
+      <div className="bg-[#C17B2A]/10 border border-[#C17B2A]/30 rounded-lg px-4 py-3 mb-4">
+        <p className="text-xs text-[#C17B2A] font-medium">
+          ⚠️ Always check group rules before posting. Getting flagged as spam in a neighborhood group can permanently damage a client&apos;s local reputation.
+        </p>
+      </div>
+
+      {/* Existing rules */}
+      {loading ? (
+        <p className="text-xs text-[#8A8070] py-4">Loading...</p>
+      ) : rules.length === 0 ? (
+        <p className="text-xs text-[#8A8070] py-4">No group rules saved yet. Add a group to track its posting rules.</p>
+      ) : (
+        <div className="space-y-3 mb-4">
+          {rules.map((rule) => (
+            <div key={rule.id} className="bg-[#0E0C0A] rounded-lg p-4 border border-[rgba(193,123,42,0.1)]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-medium text-[#F2EDE4]">{rule.groupName}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">{rule.platform}</span>
+                  </div>
+                  {rule.allowedPostFrequency && (
+                    <p className="text-xs text-[#8A8070]">Posting frequency: <span className="text-[#F2EDE4]">{rule.allowedPostFrequency}</span></p>
+                  )}
+                  <p className="text-xs text-[#8A8070]">
+                    Promo thread: <span className="text-[#F2EDE4]">{rule.promoThread ? 'Yes' : 'No'}</span>
+                  </p>
+                  {rule.bannedBehaviors && (
+                    <p className="text-xs text-red-400/80 mt-1">Banned: {rule.bannedBehaviors}</p>
+                  )}
+                  {rule.notes && (
+                    <p className="text-xs text-[#8A8070] mt-1 italic">{rule.notes}</p>
+                  )}
+                </div>
+                <button onClick={() => deleteRule(rule.id)} className="text-[10px] text-[#8A8070] hover:text-red-400 transition-colors">Remove</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add form */}
+      {!showForm ? (
+        <button onClick={() => setShowForm(true)} className="text-xs text-[#C17B2A] hover:text-[#D4892F] transition-colors">+ Add Group</button>
+      ) : (
+        <div className="bg-[#0E0C0A] rounded-lg p-4 border border-[rgba(193,123,42,0.15)] space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-[#8A8070] mb-1">Group Name *</label>
+              <input className={inputCls} value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. St. Matthews Community" />
+            </div>
+            <div>
+              <label className="block text-xs text-[#8A8070] mb-1">Platform</label>
+              <select className={inputCls} value={platform} onChange={(e) => setPlatform(e.target.value)}>
+                <option>Facebook Group</option>
+                <option>Nextdoor</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-[#8A8070] mb-1">Allowed Promo Frequency</label>
+              <input className={inputCls} value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="e.g. once per week, Fridays only" />
+            </div>
+            <div>
+              <label className="block text-xs text-[#8A8070] mb-1">Dedicated Promo Thread</label>
+              <button
+                onClick={() => setPromoThread(!promoThread)}
+                className={`w-11 h-6 rounded-full transition-colors relative ${promoThread ? 'bg-[#C17B2A]' : 'bg-[#2A2520]'}`}
+              >
+                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${promoThread ? 'left-[22px]' : 'left-0.5'}`} />
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-[#8A8070] mb-1">Banned Behaviors</label>
+            <textarea className={inputCls + ' min-h-[50px]'} value={banned} onChange={(e) => setBanned(e.target.value)}
+              placeholder="e.g. No direct self-promotion, no links in first post" />
+          </div>
+          <div>
+            <label className="block text-xs text-[#8A8070] mb-1">Notes</label>
+            <textarea className={inputCls + ' min-h-[40px]'} value={notes} onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Admin is friendly, approved us to post job stories" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={save} disabled={saving || !groupName} className="bg-[#C17B2A] text-white px-4 py-2 rounded-lg text-xs font-medium hover:bg-[#D4892F] transition-colors disabled:opacity-50">
+              {saving ? 'Saving...' : 'Save Group'}
+            </button>
+            <button onClick={() => setShowForm(false)} className="text-xs text-[#8A8070] px-3 py-2 hover:text-[#F2EDE4] transition-colors">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Tab 3: Response Templates ──────────────────────────────────────
+
+function TemplatesTab({ clientId, showToast }: { clientId: string; showToast: (msg: string) => void }) {
+  const [templates, setTemplates] = useState<ResponseTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+
+  // New template form
+  const [newName, setNewName] = useState('')
+  const [newPlatform, setNewPlatform] = useState('Any')
+  const [newText, setNewText] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const inputCls = 'w-full bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-4 py-2.5 text-[#F2EDE4] text-sm focus:outline-none focus:border-[#C17B2A] transition-colors placeholder:text-[#8A8070]/50'
+
+  const load = useCallback(() => {
+    if (!clientId) return
+    setLoading(true)
+    fetch(`/api/sage/community?clientId=${clientId}&type=templates`)
+      .then((r) => r.json())
+      .then((data) => setTemplates(data.templates || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [clientId])
+
+  useEffect(() => { load() }, [load])
+
+  const startEdit = (t: ResponseTemplate) => {
+    setEditingId(t.id)
+    setEditText(t.templateText)
+  }
+
+  const saveEdit = async () => {
+    if (!editingId) return
+    await fetch('/api/sage/community', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_template', id: editingId, templateText: editText }),
+    })
+    setEditingId(null)
+    showToast('Template updated!')
+    load()
+  }
+
+  const addTemplate = async () => {
+    if (!newName || !newText) return
+    setSaving(true)
+    try {
+      await fetch('/api/sage/community', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save_template', clientId, templateName: newName, platform: newPlatform, templateText: newText }),
+      })
+      setNewName(''); setNewText(''); setNewPlatform('Any')
+      showToast('Template added!')
+      load()
+    } catch { showToast('Save failed.') }
+    setSaving(false)
+  }
+
+  if (loading) return <p className="text-xs text-[#8A8070] py-4">Loading templates...</p>
+
+  return (
+    <div>
+      <p className="text-xs text-[#8A8070] mb-4">Quick responses for when neighbors tag this client or ask for recommendations.</p>
+
+      {/* Template cards */}
+      <div className="space-y-3 mb-6">
+        {templates.map((t) => (
+          <div key={t.id} className="bg-[#0E0C0A] rounded-lg p-4 border border-[rgba(193,123,42,0.1)]">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-[#F2EDE4]">{t.templateName}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#C17B2A]/10 text-[#C17B2A] border border-[#C17B2A]/20">{t.platform}</span>
+              </div>
+              <div className="flex gap-2">
+                {editingId === t.id ? (
+                  <button onClick={saveEdit} className="text-[10px] text-green-400 hover:text-green-300">Save</button>
+                ) : (
+                  <button onClick={() => startEdit(t)} className="text-[10px] text-[#8A8070] hover:text-[#C17B2A]">Edit</button>
+                )}
+                <button onClick={() => { navigator.clipboard.writeText(t.templateText); showToast('Copied!') }}
+                  className="text-[10px] text-[#C17B2A] hover:text-[#D4892F]">📋 Copy</button>
+              </div>
+            </div>
+            {editingId === t.id ? (
+              <textarea className={inputCls + ' min-h-[80px] text-xs leading-relaxed'} value={editText} onChange={(e) => setEditText(e.target.value)} />
+            ) : (
+              <p className="text-xs text-[#8A8070] leading-relaxed whitespace-pre-line">{t.templateText}</p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Add new template */}
+      <div className="bg-[#0E0C0A] rounded-lg p-4 border border-[rgba(193,123,42,0.1)] space-y-3">
+        <p className="text-xs font-medium text-[#8A8070]">Add Custom Template</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-[#8A8070] mb-1">Template Name *</label>
+            <input className={inputCls} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Thank You Response" />
+          </div>
+          <div>
+            <label className="block text-xs text-[#8A8070] mb-1">Platform</label>
+            <select className={inputCls} value={newPlatform} onChange={(e) => setNewPlatform(e.target.value)}>
+              <option>Any</option>
+              <option>Nextdoor</option>
+              <option>Facebook Group</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs text-[#8A8070] mb-1">Template Text *</label>
+          <textarea className={inputCls + ' min-h-[80px]'} value={newText} onChange={(e) => setNewText(e.target.value)}
+            placeholder="Use [brackets] for placeholders like [neighbor name], [phone], [neighborhood]..." />
+        </div>
+        <button onClick={addTemplate} disabled={saving || !newName || !newText}
+          className="bg-[#C17B2A] text-white px-4 py-2 rounded-lg text-xs font-medium hover:bg-[#D4892F] transition-colors disabled:opacity-50">
+          {saving ? 'Saving...' : 'Add Template'}
+        </button>
+      </div>
     </div>
   )
 }

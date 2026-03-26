@@ -607,3 +607,26 @@ model GbpChecklist {
 
   @@unique([clientId, itemKey])
 }
+
+// ─── Community Group Rules & Templates ──────────────────────────────
+
+model GroupRules {
+  id                   String   @id @default(cuid())
+  clientId             String
+  groupName            String
+  platform             String
+  allowedPostFrequency String?
+  promoThread          Boolean  @default(false)
+  bannedBehaviors      String?
+  notes                String?
+  createdAt            DateTime @default(now())
+}
+
+model GroupResponseTemplate {
+  id           String   @id @default(cuid())
+  clientId     String
+  templateName String
+  platform     String
+  templateText String
+  createdAt    DateTime @default(now())
+}
