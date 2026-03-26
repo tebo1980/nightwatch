@@ -273,7 +273,158 @@ export default function MaxDashboard() {
             </div>
           </>
         )}
+
+        {/* ─── NEIGHBORHOOD PROOF POSTS ──────────────────────── */}
+        <NeighborhoodProofSection clientName={clients.find((c) => c.id === selectedClientId)?.businessName || ''} />
       </div>
+    </div>
+  )
+}
+
+// ─── Neighborhood Proof Posts (collapsible) ─────────────────────────
+
+function NeighborhoodProofSection({ clientName }: { clientName: string }) {
+  const [open, setOpen] = useState(false)
+  const [trade, setTrade] = useState('')
+  const [neighborhood, setNeighborhood] = useState('')
+  const [jobType, setJobType] = useState('')
+  const [description, setDescription] = useState('')
+  const [customerName, setCustomerName] = useState('')
+  const [generating, setGenerating] = useState(false)
+  const [nextdoorPost, setNextdoorPost] = useState('')
+  const [facebookPost, setFacebookPost] = useState('')
+  const [copiedND, setCopiedND] = useState(false)
+  const [copiedFB, setCopiedFB] = useState(false)
+
+  const inputCls = 'w-full bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-4 py-2.5 text-[#F2EDE4] text-sm focus:outline-none focus:border-[#C17B2A] transition-colors placeholder:text-[#8A8070]/50'
+
+  const canGenerate = (clientName || trade) && neighborhood && jobType && description
+
+  const generate = async () => {
+    setGenerating(true)
+    setNextdoorPost('')
+    setFacebookPost('')
+    try {
+      const res = await fetch('/api/max/neighborhood-posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientName: clientName || 'the business',
+          trade: trade || 'contractor',
+          neighborhood,
+          jobType,
+          description,
+          customerName,
+        }),
+      })
+      const data = await res.json()
+      setNextdoorPost(data.nextdoorPost || '')
+      setFacebookPost(data.facebookPost || '')
+    } catch { /* ignore */ }
+    setGenerating(false)
+  }
+
+  const copyND = () => { navigator.clipboard.writeText(nextdoorPost); setCopiedND(true); setTimeout(() => setCopiedND(false), 2000) }
+  const copyFB = () => { navigator.clipboard.writeText(facebookPost); setCopiedFB(true); setTimeout(() => setCopiedFB(false), 2000) }
+
+  return (
+    <div className="mt-8 bg-[#1E1B16] border border-[rgba(193,123,42,0.15)] rounded-xl overflow-hidden">
+      {/* Collapsible header */}
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-[rgba(193,123,42,0.03)] transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm">📣</span>
+          <span className="text-sm font-medium text-[#F2EDE4]">Neighborhood Proof Posts — Nextdoor and Facebook</span>
+        </div>
+        <span className={`text-[#8A8070] text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+
+      {/* Collapsible content */}
+      {open && (
+        <div className="px-5 pb-5 border-t border-[rgba(193,123,42,0.1)]">
+          <p className="text-xs text-[#8A8070] mt-4 mb-4">
+            Generate hyperlocal social proof posts after completing a job. One for Nextdoor, one for Facebook groups.
+          </p>
+
+          {/* Form */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-xs text-[#8A8070] mb-1.5">Client Name</label>
+              <input className={inputCls} value={clientName} readOnly={!!clientName} style={clientName ? { opacity: 0.6 } : {}} placeholder="Business name" />
+            </div>
+            <div>
+              <label className="block text-xs text-[#8A8070] mb-1.5">Trade *</label>
+              <input className={inputCls} value={trade} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. plumber, roofer, general contractor" />
+            </div>
+            <div>
+              <label className="block text-xs text-[#8A8070] mb-1.5">Neighborhood or Subdivision *</label>
+              <input className={inputCls} value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} placeholder="e.g. St. Matthews, Norton Commons" />
+            </div>
+            <div>
+              <label className="block text-xs text-[#8A8070] mb-1.5">Job Type *</label>
+              <input className={inputCls} value={jobType} onChange={(e) => setJobType(e.target.value)} placeholder="e.g. emergency pipe repair, full roof replacement" />
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-xs text-[#8A8070] mb-1.5">One to two sentences describing what was done and the outcome *</label>
+            <textarea className={inputCls + ' min-h-[80px]'} value={description} onChange={(e) => setDescription(e.target.value)}
+              placeholder="e.g. Replaced a burst pipe under the kitchen sink same day. No drywall damage, customer back to normal by dinner." />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-xs text-[#8A8070] mb-1.5">Customer first name (optional — only if they gave permission to mention)</label>
+            <input className={inputCls} value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="e.g. Sarah" />
+          </div>
+
+          <button onClick={generate} disabled={generating || !canGenerate} className="bg-[#C17B2A] text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-[#D4892F] transition-colors disabled:opacity-50">
+            {generating ? '📣 Generating...' : '📣 Generate Posts'}
+          </button>
+
+          {/* Results */}
+          {(nextdoorPost || facebookPost) && (
+            <div className="mt-6 space-y-6">
+              {/* Nextdoor */}
+              {nextdoorPost && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-[#F2EDE4]">Nextdoor Post</span>
+                    <button onClick={copyND} className="text-xs border border-[rgba(193,123,42,0.3)] text-[#C17B2A] px-3 py-1.5 rounded-lg hover:bg-[rgba(193,123,42,0.1)] transition-colors">
+                      {copiedND ? '✓ Copied' : '📋 Copy'}
+                    </button>
+                  </div>
+                  <textarea
+                    className={inputCls + ' min-h-[150px] text-sm leading-relaxed'}
+                    value={nextdoorPost}
+                    onChange={(e) => setNextdoorPost(e.target.value)}
+                  />
+                  <p className="text-[10px] text-[#8A8070] mt-1">For Nextdoor — post in the neighborhood feed. Warm and neighborly tone.</p>
+                </div>
+              )}
+
+              {/* Facebook */}
+              {facebookPost && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-[#F2EDE4]">Facebook Group Post</span>
+                    <button onClick={copyFB} className="text-xs border border-[rgba(193,123,42,0.3)] text-[#C17B2A] px-3 py-1.5 rounded-lg hover:bg-[rgba(193,123,42,0.1)] transition-colors">
+                      {copiedFB ? '✓ Copied' : '📋 Copy'}
+                    </button>
+                  </div>
+                  <textarea
+                    className={inputCls + ' min-h-[130px] text-sm leading-relaxed'}
+                    value={facebookPost}
+                    onChange={(e) => setFacebookPost(e.target.value)}
+                  />
+                  <p className="text-[10px] text-[#8A8070] mt-1">For Facebook neighborhood groups — check group rules before posting. Casual community tone.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
