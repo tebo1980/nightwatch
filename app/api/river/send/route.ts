@@ -23,10 +23,12 @@ export async function POST(req: NextRequest) {
           if (reminder.type === 'sms_customer' || reminder.type === 'sms_provider') {
             const to = reminder.type === 'sms_customer' ? appt.customerPhone : appt.client.contactPhone
             if (to && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
               const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
               await twilio.messages.create({ body: reminder.message, from: process.env.TWILIO_PHONE_NUMBER, to })
             }
           } else if (reminder.type === 'email_customer' && appt.customerEmail) {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
             const { Resend } = require('resend')
             const resend = new Resend(process.env.RESEND_API_KEY)
             await resend.emails.send({
@@ -63,7 +65,8 @@ export async function POST(req: NextRequest) {
     if (reminder.type === 'sms_customer' || reminder.type === 'sms_provider') {
       const to = reminder.type === 'sms_customer' ? appt.customerPhone : appt.client.contactPhone
       if (to && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
-        const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+              const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
         await twilio.messages.create({ body: reminder.message, from: process.env.TWILIO_PHONE_NUMBER, to })
       }
     }

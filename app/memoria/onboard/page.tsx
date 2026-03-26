@@ -52,7 +52,6 @@ export default function MemoriaOnboard() {
 
   // State
   const [processing, setProcessing] = useState(false)
-  const [clientId, setClientId] = useState('')
   const [clientSlug, setClientSlug] = useState('')
   const [insightsCount, setInsightsCount] = useState(0)
   const [error, setError] = useState('')
@@ -92,7 +91,6 @@ export default function MemoriaOnboard() {
 
       const newClientId = createData.client.id
       const newSlug = createData.slug
-      setClientId(newClientId)
       setClientSlug(newSlug)
 
       // 2. Save goals

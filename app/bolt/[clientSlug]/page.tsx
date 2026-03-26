@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
+import Link from 'next/link'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -337,7 +338,7 @@ export default function ContractorBoltView() {
           </div>
           <div className="space-y-3">
             <button onClick={resetForm} className="w-full bg-[#C17B2A] text-white py-3.5 rounded-xl text-sm font-medium hover:bg-[#D4892F] transition-colors">&#9889; New Estimate</button>
-            <a href="/bolt" className="block w-full border border-[rgba(193,123,42,0.3)] text-[#C17B2A] py-3.5 rounded-xl text-sm font-medium hover:bg-[rgba(193,123,42,0.05)] transition-colors text-center">&#128203; View All Estimates</a>
+            <Link href="/bolt" className="block w-full border border-[rgba(193,123,42,0.3)] text-[#C17B2A] py-3.5 rounded-xl text-sm font-medium hover:bg-[rgba(193,123,42,0.05)] transition-colors text-center">&#128203; View All Estimates</Link>
           </div>
         </div>
       </div>
@@ -354,7 +355,7 @@ export default function ContractorBoltView() {
           <p className="text-sm text-[#8A8070] mb-6">#{savedDraft.estimateNumber}</p>
           <div className="space-y-3">
             <button onClick={resetForm} className="w-full bg-[#C17B2A] text-white py-3.5 rounded-xl text-sm font-medium hover:bg-[#D4892F] transition-colors">&#9889; New Estimate</button>
-            <a href="/bolt" className="block w-full border border-[rgba(193,123,42,0.3)] text-[#C17B2A] py-3.5 rounded-xl text-sm font-medium hover:bg-[rgba(193,123,42,0.05)] transition-colors text-center">&#128203; View All Estimates</a>
+            <Link href="/bolt" className="block w-full border border-[rgba(193,123,42,0.3)] text-[#C17B2A] py-3.5 rounded-xl text-sm font-medium hover:bg-[rgba(193,123,42,0.05)] transition-colors text-center">&#128203; View All Estimates</Link>
           </div>
         </div>
       </div>

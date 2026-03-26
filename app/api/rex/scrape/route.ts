@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { scrapeGoogleReviews, scrapeYelpReviews } from '@/lib/rex-scraper'
 import { getRexSystemPrompt } from '@/lib/rex-prompts'

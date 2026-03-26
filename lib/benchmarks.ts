@@ -39,13 +39,6 @@ function percentile75(values: number[]): number {
   return sorted[idx]
 }
 
-function getPercentileLabel(value: number, q1: number, med: number, q3: number): string {
-  if (value >= q3) return 'Top 25%'
-  if (value >= med) return 'Above Median'
-  if (value >= q1) return 'Below Median'
-  return 'Bottom 25%'
-}
-
 // For metrics where lower is better (cost_per_call, cogs_percentage)
 const LOWER_IS_BETTER: string[] = ['cost_per_call', 'cogs_percentage']
 

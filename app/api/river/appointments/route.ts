@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
         system: 'You are River, BaraTrust\'s appointment assistant. Write short, warm, professional appointment confirmation messages for local service businesses. Sound friendly and human.',
         messages: [{ role: 'user', content: `Write a brief SMS confirmation for: ${customerName} just booked a ${serviceType} with ${client.businessName} on ${scheduled.toLocaleDateString()} at ${timeStr}. The provider is ${providerName || 'our team'}. Keep it under 160 characters.` }],
       })
-      const _confirmText = confirmMsg.content[0].type === 'text' ? confirmMsg.content[0].text : ''
+      void (confirmMsg.content[0].type === 'text' ? confirmMsg.content[0].text : '')
       // TODO: Send confirmation via Twilio in production
     } catch (e) {
       console.error('Confirmation generation error:', e)

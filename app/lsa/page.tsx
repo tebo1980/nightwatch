@@ -46,8 +46,6 @@ const DOC_ITEMS: { key: keyof Tracker; label: string }[] = [
   { key: 'businessInfoVerified', label: 'Business name, address, and phone verified and matching GBP exactly' },
 ]
 
-const PRELAUNCH_KEYS = ['gbpReviews', 'gbpComplete', 'gbpResponse', 'businessHours', 'serviceArea', 'jobTypes'] as const
-
 const PRELAUNCH_ITEMS = [
   { key: 'gbpReviews', label: 'Google Business Profile has at least 10 reviews' },
   { key: 'gbpComplete', label: 'GBP profile is fully complete and optimized' },

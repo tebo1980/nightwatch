@@ -365,7 +365,6 @@ function CalendarSection({ clientName, showToast }: { clientName: string; showTo
   const [triggers, setTriggers] = useState('')
   const [generating, setGenerating] = useState(false)
   const [posts, setPosts] = useState<CalendarPost[]>([])
-  const [rawContent, setRawContent] = useState('')
 
   const inputCls = 'w-full bg-[#0E0C0A] border border-[rgba(193,123,42,0.2)] rounded-lg px-4 py-2.5 text-[#F2EDE4] text-sm focus:outline-none focus:border-[#C17B2A] transition-colors placeholder:text-[#8A8070]/50'
 
@@ -373,7 +372,6 @@ function CalendarSection({ clientName, showToast }: { clientName: string; showTo
     if (!trade || !serviceArea) return
     setGenerating(true)
     setPosts([])
-    setRawContent('')
     try {
       const res = await fetch('/api/sage/calendar', {
         method: 'POST',
@@ -389,7 +387,6 @@ function CalendarSection({ clientName, showToast }: { clientName: string; showTo
       })
       const data = await res.json()
       setPosts(data.posts || [])
-      setRawContent(data.rawContent || '')
       if (data.posts?.length > 0) showToast(`${data.posts.length} posts generated!`)
     } catch { showToast('Generation failed.') }
     setGenerating(false)

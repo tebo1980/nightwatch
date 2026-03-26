@@ -91,6 +91,7 @@ export async function sendLeadSmsNotification(
   }
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const twilio = require('twilio')(accountSid, authToken)
     const urgencyLabel =
       lead.urgency === 'emergency' ? 'EMERGENCY' : lead.urgency === 'soon' ? 'Soon' : 'Planning'
