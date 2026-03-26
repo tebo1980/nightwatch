@@ -189,6 +189,9 @@ export default function OnboardingPage() {
             <Link href={`/clients/${createdClient.id}`} className="bg-[#C17B2A] text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-[#D4892F] transition-colors">
               View Client Dashboard
             </Link>
+            <Link href={`/lsa?clientId=${createdClient.id}`} className="border border-[rgba(193,123,42,0.3)] text-[#C17B2A] px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-[rgba(193,123,42,0.1)] transition-colors text-center">
+              📋 LSA Setup Tracker
+            </Link>
             <Link href="/" className="border border-[rgba(193,123,42,0.3)] text-[#C17B2A] px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-[rgba(193,123,42,0.1)] transition-colors">
               Back to Home
             </Link>

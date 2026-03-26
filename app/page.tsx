@@ -187,6 +187,7 @@ export default function Dashboard() {
             { name: 'Welcome Email', href: '/welcome-email', emoji: '✉️' },
             { name: 'Competitors', href: '/competitors', emoji: '🎯' },
             { name: 'Reports', href: '/reports', emoji: '📊' },
+            { name: 'LSA Tracker', href: '/lsa', emoji: '📋' },
           ].map((link) => (
             <Link
               key={link.name}
