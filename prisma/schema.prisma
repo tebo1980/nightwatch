@@ -166,6 +166,7 @@ model AgentClient {
   coleInventoryItems    ColeInventoryItem[]
   riverAppointments     RiverAppointment[]
   sagePosts             SagePost[]
+  referralCode          ReferralCode?
 }
 
 // ─── Stub models for agent relations (will be expanded per agent) ──────
@@ -605,6 +606,29 @@ model Estimate {
   pdfUrl          String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
+}
+
+// ─── Referral Program ───────────────────────────────────────────
+
+model ReferralCode {
+  id            String               @id @default(cuid())
+  clientId      String               @unique
+  client        AgentClient          @relation(fields: [clientId], references: [id])
+  code          String               @unique
+  clicks        Int                  @default(0)
+  conversions   Int                  @default(0)
+  creditsEarned Int                  @default(0)
+  createdAt     DateTime             @default(now())
+  referrals     ReferralConversion[]
+}
+
+model ReferralConversion {
+  id             String       @id @default(cuid())
+  referralCodeId String
+  referralCode   ReferralCode @relation(fields: [referralCodeId], references: [id])
+  newClientId    String
+  creditAwarded  Boolean      @default(false)
+  createdAt      DateTime     @default(now())
 }
 
 // ─── Cross-Agent Intelligence ───────────────────────────────────

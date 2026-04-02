@@ -1,5 +1,6 @@
 import { prisma } from './prisma'
 import { triggerSequence } from './emailSequences'
+import { getOrCreateReferralCode } from './referralProgram'
 
 // ─── Alert Code Definitions ────────────────────────────────────
 
@@ -183,6 +184,8 @@ export async function runHealthChecks(): Promise<HealthCheckSummary> {
     // Referral request at 90+ days in good standing
     const daysSinceStart = Math.ceil((now.getTime() - client.startedAt.getTime()) / (1000 * 60 * 60 * 24))
     if (daysSinceStart >= 90 && alerts.length === 0) {
+      // Auto-generate referral code at month 3
+      await getOrCreateReferralCode(client.id)
       await triggerSequence(client.id, 'REFERRAL_REQUEST')
     }
 
