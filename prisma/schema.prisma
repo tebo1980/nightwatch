@@ -133,6 +133,14 @@ model AgentClient {
   clientSlug            String?  @unique
   memoriaGoals          String?  // JSON: challenge, decision, success
 
+  // Health Monitoring
+  lastHealthCheck       DateTime?
+  healthAlertFlags      String[]
+  guaranteeCallCount    Int      @default(0)
+  guaranteeDaysRemaining Int?
+  termEndDate           DateTime?
+  monthlyCallTarget     Int      @default(10)
+
   // Subscription info
   tier                  String   @default("complete")
   active                Boolean  @default(true)

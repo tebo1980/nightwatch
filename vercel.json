@@ -8,12 +8,22 @@
     },
     "app/api/cron/scrape/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/cron/daily-digest/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/health-check/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
     {
       "path": "/api/cron/scrape",
       "schedule": "0 6 * * 0"
+    },
+    {
+      "path": "/api/cron/daily-digest",
+      "schedule": "0 13 * * *"
     }
   ]
 }

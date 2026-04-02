@@ -52,6 +52,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [boltStats, setBoltStats] = useState({ configs: 0, estimatesThisMonth: 0, totalValue: 0 })
   const [memoriaStats, setMemoriaStats] = useState({ count: 0, mrr: 0 })
+  const [healthRunning, setHealthRunning] = useState(false)
+  const [healthResults, setHealthResults] = useState<{
+    totalClients: number
+    clientsWithAlerts: number
+    results: { businessName: string; ownerName: string; alerts: string[]; callsThisMonth: number; healthScore: number | null; guaranteeCallCount: number; guaranteeDaysRemaining: number | null }[]
+    alertCounts: Record<string, number>
+  } | null>(null)
 
   useEffect(() => {
     fetch('/api/agent-clients')
@@ -166,6 +173,66 @@ export default function Dashboard() {
             </div>
           </div>
         </Link>
+
+        {/* Health Monitor */}
+        <div className="bg-[#1E1B16] rounded-xl border border-[rgba(193,123,42,0.15)] p-4 mb-8">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              <span className="text-xl">🩺</span>
+              <div>
+                <div className="text-sm font-medium text-[#F2EDE4]">Client Health Monitor</div>
+                <div className="text-xs text-[#8A8070]">Daily digest runs at 8am ET &mdash; or run manually</div>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                setHealthRunning(true)
+                try {
+                  const res = await fetch('/api/health-check', { method: 'POST' })
+                  const data = await res.json()
+                  if (data.success) setHealthResults(data.summary)
+                } catch { /* ignore */ }
+                setHealthRunning(false)
+              }}
+              disabled={healthRunning}
+              className="bg-[#C17B2A] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#D4892F] transition-colors disabled:opacity-50"
+            >
+              {healthRunning ? 'Running...' : 'Run Health Check Now'}
+            </button>
+          </div>
+          {healthResults && (
+            <div className="mt-4 border-t border-[rgba(138,128,112,0.15)] pt-4">
+              <div className="flex gap-4 mb-4">
+                <div className="text-center">
+                  <div className="text-lg font-semibold text-[#F2EDE4]">{healthResults.totalClients}</div>
+                  <div className="text-[10px] text-[#8A8070]">Clients</div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-lg font-semibold ${healthResults.clientsWithAlerts > 0 ? 'text-red-400' : 'text-green-400'}`}>{healthResults.clientsWithAlerts}</div>
+                  <div className="text-[10px] text-[#8A8070]">With Alerts</div>
+                </div>
+              </div>
+              {healthResults.results.length > 0 && (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {healthResults.results.map((r, i) => (
+                    <div key={i} className={`flex items-center justify-between text-sm px-3 py-2 rounded-lg ${r.alerts.length > 0 ? 'bg-red-500/10 border border-red-500/20' : 'bg-green-500/5'}`}>
+                      <div>
+                        <span className="text-[#F2EDE4] font-medium">{r.businessName}</span>
+                        <span className="text-[#8A8070] ml-2 text-xs">{r.callsThisMonth} calls | {r.guaranteeCallCount}/10 guarantee</span>
+                      </div>
+                      <div className="flex gap-1">
+                        {r.alerts.length === 0 && <span className="text-green-400 text-xs">✓ Healthy</span>}
+                        {r.alerts.map((a, j) => (
+                          <span key={j} className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">{a}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Agent Dashboard Links */}
         <div className="flex flex-wrap gap-2 mb-8">
