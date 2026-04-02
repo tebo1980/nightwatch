@@ -607,6 +607,39 @@ model Estimate {
   updatedAt       DateTime         @updatedAt
 }
 
+// ─── Cross-Agent Intelligence ───────────────────────────────────
+
+model AgentEvent {
+  id           String   @id @default(cuid())
+  type         String   // NEW_REVIEW, LEAD_CAPTURED, INVOICE_OVERDUE, etc.
+  clientId     String
+  agentSource  String   // Rex, Iris, Max, Della, River, etc.
+  data         Json
+  handled      Boolean  @default(false)
+  handledBy    String?  // Which agent handled the cross-trigger
+  handledAt    DateTime?
+  timestamp    DateTime @default(now())
+  createdAt    DateTime @default(now())
+}
+
+model ApprovalQueueItem {
+  id            String    @id @default(cuid())
+  clientId      String
+  eventId       String?
+  actionType    String    // review_response, collections_email, follow_up, etc.
+  agentSource   String    // Which agent drafted the content
+  targetAgent   String    // Which agent will execute
+  title         String
+  content       String    // The drafted content
+  recipientName String?
+  recipientEmail String?
+  status        String    @default("pending") // pending, approved, rejected, executed
+  reviewedAt    DateTime?
+  executedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
 // ─── GBP Optimization Checklist ──────────────────────────────────
 
 model GbpChecklist {

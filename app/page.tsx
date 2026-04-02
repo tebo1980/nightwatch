@@ -53,6 +53,9 @@ export default function Dashboard() {
   const [boltStats, setBoltStats] = useState({ configs: 0, estimatesThisMonth: 0, totalValue: 0 })
   const [memoriaStats, setMemoriaStats] = useState({ count: 0, mrr: 0 })
   const [healthRunning, setHealthRunning] = useState(false)
+  const [agentEvents, setAgentEvents] = useState<{ id: string; type: string; agentSource: string; clientId: string; data: Record<string, unknown>; handled: boolean; handledBy: string | null; timestamp: string }[]>([])
+  const [approvals, setApprovals] = useState<{ id: string; title: string; content: string; agentSource: string; targetAgent: string; actionType: string; status: string; createdAt: string }[]>([])
+  const [showApprovals, setShowApprovals] = useState(false)
   const [healthResults, setHealthResults] = useState<{
     totalClients: number
     clientsWithAlerts: number
@@ -83,6 +86,16 @@ export default function Dashboard() {
             })
         }
       })
+      .catch(() => {})
+    // Load agent events
+    fetch('/api/agent-events?limit=20')
+      .then((r) => r.json())
+      .then((data) => setAgentEvents(data.events || []))
+      .catch(() => {})
+    // Load pending approvals
+    fetch('/api/approvals')
+      .then((r) => r.json())
+      .then((data) => setApprovals(data.items || []))
       .catch(() => {})
     // Load Memoria standalone stats
     fetch('/api/memoria/standalone')
@@ -232,6 +245,79 @@ export default function Dashboard() {
               )}
             </div>
           )}
+        </div>
+
+        {/* Approval Queue + Agent Activity */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+          {/* Approval Queue */}
+          <div className="bg-[#1E1B16] rounded-xl border border-[rgba(193,123,42,0.15)] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span>📋</span>
+                <span className="text-sm font-medium text-[#F2EDE4]">Approval Queue</span>
+                {approvals.length > 0 && (
+                  <span className="bg-red-500/20 text-red-400 text-[10px] px-1.5 py-0.5 rounded-full font-medium">{approvals.length}</span>
+                )}
+              </div>
+              <button onClick={() => setShowApprovals(!showApprovals)} className="text-xs text-[#C17B2A]">
+                {showApprovals ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            {showApprovals && approvals.length === 0 && (
+              <div className="text-xs text-[#8A8070] text-center py-4">No pending approvals</div>
+            )}
+            {showApprovals && approvals.map((item) => (
+              <div key={item.id} className="border border-[rgba(138,128,112,0.15)] rounded-lg p-3 mb-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-[#F2EDE4]">{item.title}</span>
+                  <span className="text-[10px] text-[#8A8070]">{item.agentSource} → {item.targetAgent}</span>
+                </div>
+                <div className="text-xs text-[#8A8070] mb-2 line-clamp-2">{item.content}</div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      await fetch('/api/approvals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: item.id, action: 'approve' }) })
+                      setApprovals((prev) => prev.filter((a) => a.id !== item.id))
+                    }}
+                    className="bg-green-600 text-white text-[10px] px-2 py-1 rounded hover:bg-green-700"
+                  >Approve</button>
+                  <button
+                    onClick={async () => {
+                      await fetch('/api/approvals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: item.id, action: 'reject' }) })
+                      setApprovals((prev) => prev.filter((a) => a.id !== item.id))
+                    }}
+                    className="border border-red-500/30 text-red-400 text-[10px] px-2 py-1 rounded hover:bg-red-500/10"
+                  >Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Agent Activity Feed */}
+          <div className="bg-[#1E1B16] rounded-xl border border-[rgba(193,123,42,0.15)] p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span>⚡</span>
+              <span className="text-sm font-medium text-[#F2EDE4]">Agent Activity</span>
+            </div>
+            {agentEvents.length === 0 ? (
+              <div className="text-xs text-[#8A8070] text-center py-4">No recent agent events</div>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {agentEvents.slice(0, 15).map((ev) => {
+                  const time = new Date(ev.timestamp).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+                  return (
+                    <div key={ev.id} className="flex items-start gap-2 text-xs">
+                      <span className="text-[#8A8070] whitespace-nowrap min-w-[60px]">{time}</span>
+                      <span className={`font-medium ${ev.handled ? 'text-green-400' : 'text-[#C17B2A]'}`}>{ev.agentSource}</span>
+                      <span className="text-[#8A8070]">→</span>
+                      <span className="text-[#F2EDE4]">{ev.type.replace(/_/g, ' ').toLowerCase()}</span>
+                      {ev.handledBy && <span className="text-[#8A8070]">→ {ev.handledBy}</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Agent Dashboard Links */}
