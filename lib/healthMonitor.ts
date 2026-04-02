@@ -1,4 +1,5 @@
 import { prisma } from './prisma'
+import { triggerSequence } from './emailSequences'
 
 // ─── Alert Code Definitions ────────────────────────────────────
 
@@ -162,6 +163,28 @@ export async function runHealthChecks(): Promise<HealthCheckSummary> {
         guaranteeDaysRemaining: daysRemaining,
       },
     })
+
+    // ── Trigger email sequences based on alerts ──────────
+    if (alerts.includes('GUARANTEE_AT_RISK')) {
+      await triggerSequence(client.id, 'GUARANTEE_AT_RISK', { callCount: callsThisMonth })
+    }
+    if (alerts.includes('GUARANTEE_ACHIEVED')) {
+      await triggerSequence(client.id, 'GUARANTEE_ACHIEVED', { callCount: callsThisMonth })
+    }
+    if (alerts.includes('TERM_ENDING_60') || alerts.includes('TERM_ENDING_30')) {
+      await triggerSequence(client.id, 'TERM_ENDING')
+    }
+
+    // Upsell when health score crosses 75 for the first time
+    if (healthScore !== null && healthScore >= 75) {
+      await triggerSequence(client.id, 'UPSELL_TRIGGER', { healthScore })
+    }
+
+    // Referral request at 90+ days in good standing
+    const daysSinceStart = Math.ceil((now.getTime() - client.startedAt.getTime()) / (1000 * 60 * 60 * 24))
+    if (daysSinceStart >= 90 && alerts.length === 0) {
+      await triggerSequence(client.id, 'REFERRAL_REQUEST')
+    }
 
     // Count alerts
     for (const a of alerts) {

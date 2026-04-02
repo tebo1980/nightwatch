@@ -141,6 +141,11 @@ model AgentClient {
   termEndDate           DateTime?
   monthlyCallTarget     Int      @default(10)
 
+  // Email Sequence Tracking
+  sequencesTriggered    String[]
+  lastEmailSentAt       DateTime?
+  emailOptOut           Boolean  @default(false)
+
   // Subscription info
   tier                  String   @default("complete")
   active                Boolean  @default(true)
